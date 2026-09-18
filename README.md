@@ -15,38 +15,61 @@ Not affiliated with Scratch, the Scratch Foundation or MIT.
 
 ## Download
 
-The [releases page](https://github.com/E1GAT0-dotcom/SpriteScout/releases) has a
-download for each system:
+There are two versions on the
+[releases page](https://github.com/E1GAT0-dotcom/SpriteScout/releases), and they
+do the same checks. Pick one:
 
-- Windows: `SpriteScout-windows.exe`, double-click it
-- Mac (Apple Silicon): `SpriteScout-mac`, right-click it the first time and
-  choose Open, since it isn't signed
-- Linux: `SpriteScout-linux`, `chmod +x` it and run it from a terminal
+| System | Window version | Text version |
+|---|---|---|
+| Windows | `SpriteScout-window-windows.exe` | `SpriteScout-windows.exe` |
+| Mac (Apple Silicon) | `SpriteScout-window-mac.zip` | `SpriteScout-mac` |
+| Linux | `SpriteScout-window-linux` | `SpriteScout-linux` |
 
-On Windows the file isn't signed either, so some PCs block it or warn about it.
-If that happens, download the source and double-click `SpriteScout.bat`, which
-runs the same tool with Python. Any system with Python 3.8 or newer can skip
-the download entirely:
+The **window version** opens a page in your browser with tabs and buttons, and
+no typing of commands. Nothing is uploaded: the page is served by the program on
+your own computer, and closing it stops there.
 
-```
-python spritescout.py
-```
+The **text version** runs in a terminal and takes typed commands. It's smaller,
+it's what the tests drive, and it's handy if you like the keyboard.
 
-Type `help` in the window to see every command and flag.
+Neither is signed, so systems get suspicious about them:
 
-Once a day it asks GitHub whether a newer version is out, and says so if there
-is one. `--no-update-check` turns that off.
+- Windows sometimes blocks or warns about unsigned programs. If that happens,
+  download the source and double-click `SpriteScout.bat`, which runs the same
+  tool with Python.
+- Mac: unzip it, then right-click the app the first time and choose Open.
+- Linux: `chmod +x` it, then run it.
 
-### The window version
-
-There's also a version with a window, which opens a page in your browser
-instead of a text prompt. It's early: it checks a username, a project or a
-studio and shows the results as a colour-coded list. The rest of the features
-are still console-only. Run it from the source with:
+Any system with Python 3.8 or newer can skip the downloads:
 
 ```
-python spritescout_gui.py
+python spritescout_gui.py    the window version
+python spritescout.py        the text version
 ```
+
+Type `help` in the text version to see every command and flag.
+
+Once a day it asks GitHub whether a newer version is out: the text version says
+so when it starts, and the window version puts a bar at the top of the page.
+`--no-update-check` turns that off, as does the tickbox in Settings.
+
+### What the window version has
+
+Each tab is one of the checks, and results appear as they arrive:
+
+- **Check** — a username, project or studio, colour-coded by how findable it is
+- **Search words** — where something ranks for words people type, and what
+  would move it up
+- **Try titles** — how crowded each title you're considering already is
+- **Find studios** — studios about a topic that anyone can add projects to
+- **Where it ranks** — the searches something already comes up for
+- **History** — the chart page of every check you've run
+- **Settings** — sort, how deep to look, what counts as the first screen, and
+  whether to mention new versions
+
+**Keep looking** appears on anything the check stopped short of, and carries on
+to the end of search. **Stop** ends a long check without losing the rows that
+are already there.
 
 ## What it looks like
 
@@ -152,11 +175,17 @@ python tests/run_tests.py --exe      also try the main commands with SpriteScout
 Everything the tests make lands in `output/test-run`, and `report.txt` there has
 every command with its full output.
 
-## Building the .exe
+## Building it yourself
 
 ```
 pip install pyinstaller
 pyinstaller --onefile --console --name SpriteScout spritescout.py
+pyinstaller --onefile --windowed --name SpriteScout --add-data "gui.html;." --add-data "icon.png;." spritescout_gui.py
 ```
 
-It's one file, `spritescout.py`, with nothing to install.
+On Mac and Linux the `--add-data` separator is `:` instead of `;`. GitHub builds
+all six downloads on every release; see
+[.github/workflows/build.yml](.github/workflows/build.yml).
+
+Nothing to install: `spritescout.py` is the whole tool, and
+`spritescout_gui.py` serves `gui.html` on top of it. Standard library only.

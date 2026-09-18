@@ -47,7 +47,7 @@ try:
 except ImportError:
     msvcrt = None
 
-VERSION = "1.8"
+VERSION = "2.0"
 RELEASES = "https://github.com/E1GAT0-dotcom/SpriteScout/releases"
 LATEST_RELEASE = "https://api.github.com/repos/E1GAT0-dotcom/SpriteScout/releases/latest"
 FROZEN = getattr(sys, "frozen", False)  # running as SpriteScout.exe
@@ -985,10 +985,12 @@ def has_word(words, word):
 
 # Extra features, each turned on with its own flag
 
-def open_studios(words):
+def open_studios(words, progress=None):
     """Active studios about some words that anyone can add projects to, most followed first.
 
-    Returns (studios, note), where the note explains an empty list.
+    Checking how active each one is takes a request each, so `progress` is called
+    with (done, total) along the way. Returns (studios, note), where the note
+    explains an empty list.
     """
     query = " ".join(words)
     topic = [word for word in words_in(query) if word not in STOP_WORDS]
@@ -1004,8 +1006,13 @@ def open_studios(words):
         silent = words_with_no_results("studios", query)
         return [], (f"No studios come up for \"{query}\" at all. "
                     + (silent_note(silent) + " " if silent else "") + "Try other words.")
-    active = [studio for studio in list(candidates.values())[: max(settings.top, 1) * 3]
-              if (days_since_activity(studio["id"]) or float("inf")) <= settings.active_days]
+    wanted = list(candidates.values())[: max(settings.top, 1) * 3]
+    active = []
+    for done, studio in enumerate(wanted, 1):
+        if progress:
+            progress(done, len(wanted))
+        if (days_since_activity(studio["id"]) or float("inf")) <= settings.active_days:
+            active.append(studio)
     if not active:
         return [], "None found. Try other words, or allow older activity with --active-days."
     active.sort(key=followers_of, reverse=True)
@@ -1016,7 +1023,8 @@ def find_studios(words):
     """--find-studios: active studios about some words that anyone can add projects to."""
     query = " ".join(words)
     print(f"\nLooking for active studios about \"{query}\" that anyone can add projects to.")
-    studios, note = open_studios(words)
+    studios, note = open_studios(words, progress=show_studio_progress)
+    end_progress()
     if note:
         print()
         print(wrap(note))
@@ -1560,6 +1568,11 @@ def show_progress(lookup):
     else:
         text = f"Looked through {lookup.checked:,} results"
     print(f"\r  {text:<60}", end="", flush=True)
+
+
+def show_studio_progress(done, total):
+    if sys.stdout.isatty():
+        print(f"\r  Checking how active {done} of {total} studios are", end="", flush=True)
 
 
 def end_progress():

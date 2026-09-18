@@ -43,6 +43,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0; background: var(--page); color: var(--ink);
     font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -56,7 +57,7 @@
   header .name { font-weight: 650; letter-spacing: 0.2px; }
   header .version { color: var(--muted); font-size: 13px; }
   main { max-width: 860px; margin: 0 auto; padding: 22px 20px 64px; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
   .tab {
     padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
     background: transparent; color: var(--ink-2); font: inherit; font-weight: 600; cursor: pointer;
@@ -74,11 +75,35 @@
     background: var(--surface); color: var(--ink); font: inherit;
   }
   input[type="text"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: transparent; }
+  select, input[type="number"] {
+    width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font: inherit;
+  }
+  select:focus, input[type="number"]:focus {
+    outline: 2px solid var(--brand); outline-offset: 1px; border-color: transparent;
+  }
+  #ask-settings { align-items: end; }
+  #ask-settings label {
+    display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 160px;
+    color: var(--ink-2); font-size: 13px; font-weight: 600;
+  }
+  #ask-settings label.tickbox {
+    flex-direction: row; align-items: center; gap: 8px; flex: 0 0 auto; padding-bottom: 13px;
+  }
+  #ask-settings input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); }
   button.go {
     padding: 12px 20px; border: 0; border-radius: 10px; font: inherit; font-weight: 650;
     background: var(--brand); color: #06120b; cursor: pointer;
   }
   button.go:disabled { opacity: 0.55; cursor: default; }
+  .stop, .scan {
+    border: 1px solid var(--line); border-radius: 999px; background: transparent;
+    color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .stop { padding: 4px 13px; }
+  .scan { display: block; margin-top: 9px; padding: 6px 13px; border-radius: 9px; background: var(--surface); }
+  .stop:enabled:hover, .scan:enabled:hover { color: var(--ink); border-color: var(--brand); }
+  .stop:disabled, .scan:disabled { opacity: 0.55; cursor: default; }
   .quick {
     margin-top: 12px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 10px;
     background: transparent; color: var(--ink); font: inherit; cursor: pointer; text-align: left;
@@ -86,9 +111,19 @@
   .quick:hover { background: var(--raised); }
   .quick b { color: var(--brand); }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
+  .hint.bad { color: var(--missing); }
+  .banner {
+    display: block; padding: 11px 20px; text-decoration: none; font-size: 14px; font-weight: 600;
+    color: var(--ink); background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+    border-bottom: 1px solid var(--line);
+  }
+  .banner:hover { background: color-mix(in srgb, var(--brand) 26%, var(--surface)); }
   .bar { height: 4px; border-radius: 4px; background: var(--raised); margin: 22px 0 6px; overflow: hidden; }
   .bar div { height: 100%; width: 0; background: var(--brand); transition: width 0.25s ease; }
-  .status { color: var(--ink-2); font-size: 14px; min-height: 20px; }
+  .status {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--ink-2); font-size: 14px; min-height: 28px;
+  }
   .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
   .chip {
     display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
@@ -145,6 +180,7 @@
   <span class="name">SpriteScout</span>
   <span class="version">__VERSION__</span>
 </header>
+<a class="banner" id="update" href="#" target="_blank" rel="noreferrer" hidden></a>
 <main>
   <nav class="tabs">
     <button class="tab on" data-panel="titles">Check</button>
@@ -153,6 +189,7 @@
     <button class="tab" data-panel="studios">Find studios</button>
     <button class="tab" data-panel="searches">Where it ranks</button>
     <a class="tab" href="/history" target="_blank" rel="noreferrer">History</a>
+    <button class="tab" data-panel="settings">Settings</button>
   </nav>
 
   <section id="panel-titles">
@@ -198,8 +235,38 @@
     <p class="hint">Tries the words in its title and lists the searches it already comes up for.</p>
   </section>
 
+  <section id="panel-settings" hidden>
+    <form id="ask-settings">
+      <label>Sort
+        <select id="set-sort">
+          <option value="both">Popular and Trending</option>
+          <option value="popular">Popular only</option>
+          <option value="trending">Trending only</option>
+        </select>
+      </label>
+      <label>Results to look through
+        <input type="number" id="set-depth" min="1" max="10000" placeholder="usual">
+      </label>
+      <label>First screen size
+        <input type="number" id="set-first_screen" min="1" max="40" placeholder="16">
+      </label>
+      <label>Results the finders list
+        <input type="number" id="set-top" min="1" placeholder="10">
+      </label>
+      <label class="tickbox">
+        <input type="checkbox" id="set-updates" checked>
+        Tell me about new versions
+      </label>
+      <button class="go">Save</button>
+    </form>
+    <p class="hint" id="saved-note">Left empty, each check uses its usual amount. Saved for next time.</p>
+  </section>
+
   <div class="bar"><div id="fill"></div></div>
-  <div class="status" id="status"></div>
+  <div class="status">
+    <span id="status"></span>
+    <button class="stop" id="stop" hidden>Stop</button>
+  </div>
   <div class="counts" id="counts"></div>
   <div class="rows" id="rows" hidden></div>
   <div class="detail" id="detail" hidden></div>
@@ -209,7 +276,9 @@
 const element = id => document.getElementById(id);
 const fill = element("fill"), statusLine = element("status"), counts = element("counts");
 const rows = element("rows"), detail = element("detail"), problem = element("problem");
-let polling = null, shown = 0;
+const stopButton = element("stop");
+const settingNames = ["sort", "depth", "first_screen", "top"];
+let polling = null, drawn = [], running = false;
 
 for (const tab of document.querySelectorAll("button.tab")) {
   tab.addEventListener("click", () => {
@@ -250,7 +319,33 @@ element("ask-searches").addEventListener("submit", event => {
   begin("/searches?what=" + encodeURIComponent(element("searches-what").value.trim()));
 });
 
+element("ask-settings").addEventListener("submit", async event => {
+  event.preventDefault();
+  const asked = settingNames.map(name => `${name}=${encodeURIComponent(value(name))}`);
+  asked.push("no_update_check=" + (element("set-updates").checked ? "" : "1"));
+  const saved = await (await fetch("/save?" + asked.join("&"))).json();
+  const note = element("saved-note");
+  note.textContent = saved.error || "Saved. Checks from now on will use these.";
+  note.classList.toggle("bad", Boolean(saved.error));
+});
+
+stopButton.addEventListener("click", async () => {
+  stopButton.disabled = true;
+  statusLine.textContent = "Stopping…";
+  await fetch("/stop");
+});
+
+fetch("/update").then(response => response.json()).then(update => {
+  if (!update.note) return;
+  const banner = element("update");
+  banner.href = update.url;
+  banner.textContent = update.note + "  Download it →";
+  banner.hidden = false;
+});
+
 fetch("/settings").then(response => response.json()).then(saved => {
+  for (const name of settingNames) if (saved[name]) element("set-" + name).value = saved[name];
+  element("set-updates").checked = !saved.no_update_check;
   if (!saved.username) return;
   const quick = element("quick");
   quick.replaceChildren(document.createTextNode("Check my projects: "), strong(saved.username));
@@ -261,19 +356,33 @@ fetch("/settings").then(response => response.json()).then(saved => {
   });
 });
 
-async function begin(url) {
-  rows.replaceChildren();
-  detail.replaceChildren();
-  counts.replaceChildren();
-  rows.hidden = detail.hidden = problem.hidden = true;
-  shown = 0;
-  fill.style.width = "0";
+function value(name) {
+  return element("set-" + name).value.trim();
+}
+
+async function begin(url, keep) {
+  if (!keep) {
+    rows.replaceChildren();
+    detail.replaceChildren();
+    counts.replaceChildren();
+    rows.hidden = detail.hidden = true;
+    drawn = [];
+    fill.style.width = "0";
+  }
+  problem.hidden = true;
   statusLine.textContent = "Asking Scratch…";
-  for (const button of document.querySelectorAll("button.go")) button.disabled = true;
+  working(true);
   await fetch(url);
   clearInterval(polling);
   polling = setInterval(poll, 700);
   poll();
+}
+
+function working(on) {
+  running = on;
+  for (const button of document.querySelectorAll("button.go, button.scan")) button.disabled = on;
+  stopButton.disabled = false;
+  stopButton.hidden = !on;
 }
 
 async function poll() {
@@ -284,14 +393,12 @@ async function poll() {
   }
   if (job.heading && job.total) {
     statusLine.textContent = job.state === "running"
-      ? `Checking ${job.heading}: ${job.checked} of ${job.total}`
-      : `Checked ${job.heading}`;
+      ? `Checking ${job.heading}: ${job.checked.toLocaleString()} of ${job.total.toLocaleString()}`
+      : job.stopped ? "Stopped early." : `Checked ${job.heading}`;
     fill.style.width = `${(job.checked / job.total) * 100}%`;
   }
   if (job.kind === "titles") {
-    for (const item of job.items.slice(shown)) addRow(item);
-    shown = job.items.length;
-    if (shown) rows.hidden = false;
+    showRows(job.items);
     summarise(job.items);
   } else if (job.detail) {
     const show = {words: showWords, "titles-test": showTitles, studios: showStudios, searches: showSearches};
@@ -299,14 +406,30 @@ async function poll() {
     detail.hidden = false;
   }
   if (job.state !== "running") {
-    if (job.total) fill.style.width = "100%";
+    if (job.total && !job.stopped) fill.style.width = "100%";
     clearInterval(polling);
-    for (const button of document.querySelectorAll("button.go")) button.disabled = false;
+    working(false);
     if (!job.total && !job.error) statusLine.textContent = "Nothing to check.";
   }
 }
 
-function addRow(item) {
+function showRows(items) {
+  if (items.length < drawn.length) {
+    rows.replaceChildren();
+    drawn = [];
+  }
+  items.forEach((item, place) => {
+    const same = JSON.stringify(item);
+    if (drawn[place] === same) return;
+    const row = rowFor(item);
+    if (place < rows.children.length) rows.replaceChild(row, rows.children[place]);
+    else rows.append(row);
+    drawn[place] = same;
+  });
+  rows.hidden = !items.length;
+}
+
+function rowFor(item) {
   const row = make("div", "row");
   row.append(chipFor(item.status, item.label));
 
@@ -321,9 +444,18 @@ function addRow(item) {
   if (item.status !== "easy") {
     const why = make("div", "why");
     why.textContent = item.advice;
+    if (item.scannable) why.append(keepLooking(item.place));
     row.append(why);
   }
-  rows.append(row);
+  return row;
+}
+
+function keepLooking(place) {
+  const button = make("button", "scan");
+  button.textContent = "Keep looking";
+  button.disabled = running;
+  button.addEventListener("click", () => begin(`/scan?place=${place}`, true));
+  return button;
 }
 
 function showWords(found) {

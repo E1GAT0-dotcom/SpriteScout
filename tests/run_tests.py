@@ -314,11 +314,36 @@ def offline_tests():
           row["label"] == "Easy to find" and row["rank"] == 3 and row["count"] == "1 love"
           and row["url"].endswith("/projects/5/") and row["change"] == "", row)
 
+    stopped = scout.Lookup("projects", lookup.item, "Demo")
+    stopped.checked = 200
+    later = gui.row("projects", stopped.item, stopped, "unknown", "", 2)
+    check("the window version marks results a scan could look further for",
+          later["scannable"] is True and later["place"] == 2 and row["scannable"] is False, later)
+
     home = RUN / "offline" / "window"
     with Patch(scout, HERE=home, OUTPUT=home / "output"):
         gui.remember({"username": "demo"})
         check("the window version remembers your username", gui.remembered().get("username") == "demo",
               gui.remembered())
+
+        gui.save_settings({"sort": "trending", "depth": "500", "first_screen": "", "top": "3"})
+        check("the window version passes saved settings to the checks",
+              gui.saved_flags() == ["--sort", "trending", "--depth", "500", "--top", "3"],
+              gui.saved_flags())
+        try:
+            gui.save_settings({"depth": "99999"})
+            refused = "(allowed it)"
+        except scout.CheckError as error:
+            refused = str(error)
+        check("the window version turns down a setting it can't use",
+              "10,000" in refused and "depth" in refused, refused)
+        check("a setting it turns down doesn't replace the saved one",
+              gui.remembered().get("depth") == "500", gui.remembered())
+
+        gui.save_settings({**gui.remembered(), "no_update_check": "1"})
+        check("the window version can be told to stop checking for new versions",
+              "--no-update-check" in gui.saved_flags() and gui.update_notice() == {}, gui.saved_flags())
+        gui.save_settings({**gui.remembered(), "no_update_check": ""})
 
     def window_error(work, *arguments):
         gui.start("test", work, *arguments)
@@ -338,20 +363,68 @@ def offline_tests():
           "what the studios should be about" in window_error(gui.find_studios, "").lower())
     check("the window version explains searches without a project",
           "one project or studio" in window_error(gui.find_searches, "griffpatch"))
+    check("the window version explains a scan for a result that has gone",
+          "Check it again first" in window_error(gui.scan_deeper, "7"))
 
-    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), gui.Handler) as server:
+    pages = {"asked": 0}
+
+    def busy_search(kind, query, sort, offset, limit):
+        pages["asked"] += 1
+        if pages["asked"] >= 3:
+            gui.stopping.set()  # as if Stop was pressed partway through
+        return tuple({"id": 900 + offset + index, "title": "Sand box"} for index in range(limit))
+
+    waiting = scout.Lookup("projects", {"id": 5, "title": "Sand box", "stats": {"loves": 1}}, "Sand box")
+    waiting.checked = waiting.offset = 80
+    gui.job.update(kind="titles", stopped=False,
+                   items=[gui.row("projects", waiting.item, waiting, "unknown", "", 0)])
+    gui.unfinished[0] = ("projects", waiting.item, waiting)
+    session = settings("--no-log")  # made first: patching search_page hides its cache
+    with Patch(scout, search_page=busy_search):
+        gui.scan_deeper(session, "0")
+    check("the window version's scan stops when asked, and can be carried on later",
+          gui.job["stopped"] and gui.job["items"][0]["scannable"] is True and 0 in gui.unfinished
+          and waiting.checked > 80, (gui.job["items"][0], waiting.checked))
+    gui.stopping.clear()
+    gui.unfinished.clear()
+
+    # Settings saved through the server go to the test folder, not anyone's real one.
+    with Patch(scout, HERE=home, OUTPUT=home / "output"),             socketserver.ThreadingTCPServer(("127.0.0.1", 0), gui.Handler) as server:
         threading.Thread(target=server.serve_forever, daemon=True).start()
         address = f"http://127.0.0.1:{server.server_address[1]}/"
         page = urllib.request.urlopen(address, timeout=10).read().decode("utf-8")
         icon = urllib.request.urlopen(address + "icon.png", timeout=10)
+        refused = json.loads(urllib.request.urlopen(address + "save?depth=lots", timeout=10).read())
+        cleared = json.loads(urllib.request.urlopen(address + "save?depth=", timeout=10).read())
+        stopping = json.loads(urllib.request.urlopen(address + "stop", timeout=10).read())
         server.shutdown()
+    gui.stopping.clear()
     check("the window version serves its page", f">{scout.VERSION}<" in page and "SpriteScout" in page
           and "__VERSION__" not in page and icon.status == 200, page[:200])
+    check("the window version's page has its stop, scan and settings controls",
+          'id="stop"' in page and "Keep looking" in page and 'id="set-depth"' in page
+          and "/save?" in page and "/scan?" in page and '"/update"' in page)
+
+    with Patch(scout, update_note=lambda: f"SpriteScout 9.9 is out, and this is {scout.VERSION}. "
+                                          f"Get it from {scout.RELEASES}"):
+        notice = gui.update_notice()
+    with Patch(scout, update_note=lambda: ""):
+        quiet = gui.update_notice()
+    check("the window version shows a new version on the page, having no console to print to",
+          notice["note"] == f"SpriteScout 9.9 is out, and this is {scout.VERSION}."
+          and notice["url"] == scout.RELEASES and quiet == {}, (notice, quiet))
+    check("the window version lets you clear a setting by emptying the box",
+          not cleared.get("depth"), cleared)
+    check("the window version says why a setting won't do, instead of breaking",
+          "whole number" in refused.get("error", "") and stopping == {"stopping": True},
+          (refused, stopping))
 
     # Telling you when a newer version is out
+    major, minor = (int(part) for part in scout.VERSION.split("."))
+    later, much_later = f"{major}.{minor + 1}", f"{major}.{minor + 10}"
     check("compares versions",
-          scout.newer_version_line("1.9").startswith("SpriteScout 1.9 is out")
-          and scout.newer_version_line("1.10").startswith("SpriteScout 1.10 is out")
+          scout.newer_version_line(later).startswith(f"SpriteScout {later} is out")
+          and scout.newer_version_line(much_later).startswith(f"SpriteScout {much_later} is out")
           and scout.newer_version_line(scout.VERSION) == ""
           and scout.newer_version_line("0.9") == "" and scout.newer_version_line(None) == "")
 

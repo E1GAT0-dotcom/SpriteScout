@@ -60,9 +60,9 @@ jobs:
             extra: --windowed --icon icon.ico --add-data "gui.html;." --add-data "icon.png;."
           - os: macos-latest
             program: spritescout_gui.py
-            built: dist/SpriteScout
-            asset: SpriteScout-window-mac
-            extra: --add-data "gui.html:." --add-data "icon.png:."
+            built: dist/SpriteScout.app
+            asset: SpriteScout-window-mac.zip
+            extra: --windowed --icon icon.icns --add-data "gui.html:." --add-data "icon.png:."
           - os: ubuntu-latest
             program: spritescout_gui.py
             built: dist/SpriteScout
@@ -86,7 +86,13 @@ jobs:
 
       - name: Name it after the system it's for
         shell: bash
-        run: mv "${{ matrix.built }}" "${{ matrix.asset }}"
+        run: |
+          # A Mac app is a folder, so it travels as a zip that keeps its insides intact.
+          if [[ "${{ matrix.built }}" == *.app ]]; then
+            ditto -c -k --keepParent "${{ matrix.built }}" "${{ matrix.asset }}"
+          else
+            mv "${{ matrix.built }}" "${{ matrix.asset }}"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

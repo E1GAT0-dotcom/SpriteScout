@@ -26,8 +26,13 @@ BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 PAGE, ICON = BASE / "gui.html", BASE / "icon.png"
 
 job = {"state": "idle", "kind": "", "heading": "", "checked": 0, "total": 0,
-       "items": [], "detail": None, "error": ""}
+       "items": [], "detail": None, "error": "", "stopped": False}
 job_lock = threading.Lock()
+unfinished = {}  # row number -> (kind, item, lookup) for results a scan could look deeper for
+stopping = threading.Event()
+
+SETTING_FLAGS = {"sort": "--sort", "depth": "--depth", "first_screen": "--first-screen", "top": "--top"}
+SETTING_SWITCHES = {"no_update_check": "--no-update-check"}  # settings that are on or off
 
 
 # Remembering the person using it
@@ -37,6 +42,26 @@ def remembered():
         return json.loads((settings_file()).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def saved_flags(saved=None):
+    """The remembered settings, as the flags the console version takes."""
+    saved = remembered() if saved is None else saved
+    flags = []
+    for name, flag in SETTING_FLAGS.items():
+        if saved.get(name):
+            flags += [flag, str(saved[name])]
+    for name, flag in SETTING_SWITCHES.items():
+        if saved.get(name):
+            flags.append(flag)
+    return flags
+
+
+def save_settings(values):
+    """Remember new settings, once they make sense."""
+    scout.make_parser().parse_args(saved_flags(values))  # complains about an unusable value
+    remember(values)
+    return remembered()
 
 
 def remember(values):
@@ -54,12 +79,16 @@ def settings_file():
 
 # Running checks in the background, so the page can show them as they arrive
 
-def start(kind, work, *arguments):
+def start(kind, work, *arguments, keep=False):
+    """Run a check in the background. `keep` leaves the results already on screen alone."""
     with job_lock:
         if job["state"] == "running":
             return
-        job.update(state="running", kind=kind, heading="", checked=0, total=0,
-                   items=[], detail=None, error="")
+        job.update(state="running", error="", stopped=False)
+        if not keep:
+            job.update(kind=kind, heading="", checked=0, total=0, items=[], detail=None)
+            unfinished.clear()
+    stopping.clear()
     threading.Thread(target=guard, args=(work, arguments), daemon=True).start()
 
 
@@ -67,7 +96,7 @@ def guard(work, arguments):
     """Run a check, turning problems into something the page can show."""
     session = scout.Session(interactive=False)
     try:
-        session.use(scout.make_parser().parse_args([]))
+        session.use(scout.make_parser().parse_args(saved_flags()))
         work(session, *arguments)
         session.log.save()
     except scout.CheckError as error:
@@ -82,6 +111,11 @@ def guard(work, arguments):
             job["state"] = "done"
 
 
+def depth_for(usual):
+    """How far to look through search: what the settings ask for, or the usual amount."""
+    return scout.clamp_depth(scout.settings.depth or usual)
+
+
 def check_titles(session, text):
     """Check a username, project or studio by title, adding rows as they finish."""
     parsed = scout.parse_command(scout.split_command(text))
@@ -94,16 +128,40 @@ def check_titles(session, text):
         remember({"username": value})
     with job_lock:
         job.update(total=len(items), heading=heading)
+    depth = depth_for(scout.SINGLE_DEPTH if len(items) == 1 else scout.USER_DEPTH)
     for item_kind, item in items:
-        lookup = scout.Lookup(item_kind, item, scout.tidy(item["title"]), title_check=True)
-        if scout.re.search(r"\w", item["title"]):
-            scout.keep_looking(lookup, scout.USER_DEPTH)
-        else:
-            lookup.unsearchable = lookup.ended = True
-        status, change = scout.record_title(session, lookup)
+        if stopping.is_set():
+            with job_lock:
+                job["stopped"] = True  # the bar keeps showing how far it got
+            return
+        lookup = scout.Lookup(item_kind, item, scout.tidy(item["title"]), scout.title_sort(),
+                              title_check=True)
+        status, change = scout.search_title(session, lookup, depth)
         with job_lock:
+            place = len(job["items"])
+            if lookup.unfinished:
+                unfinished[place] = (item_kind, item, lookup)
             job["checked"] += 1
-            job["items"].append(row(item_kind, item, lookup, status, change))
+            job["items"].append(row(item_kind, item, lookup, status, change, place))
+
+
+def scan_deeper(session, place):
+    """Keep looking for one result that stopped early, until it's found or Stop is pressed."""
+    found = unfinished.get(int(place))
+    if not found:
+        raise scout.CheckError("That result isn't on screen any more. Check it again first.")
+    kind, item, lookup = found
+    with job_lock:
+        job.update(heading=f"deeper into \"{scout.short_title(item['title'], 40)}\"",
+                   checked=lookup.checked, total=scout.MAX_DEPTH)
+    scout.keep_looking(lookup, scout.MAX_DEPTH, should_stop=stopping.is_set,
+                       progress=lambda current: job.update(checked=current.checked))
+    status, change = scout.record_title(session, lookup)
+    with job_lock:
+        job["stopped"] = lookup.unfinished
+        job["items"][int(place)] = row(kind, item, lookup, status, change, int(place))
+        if not lookup.unfinished:
+            unfinished.pop(int(place), None)
 
 
 def check_words(session, text, words):
@@ -116,13 +174,15 @@ def check_words(session, text, words):
         raise scout.CheckError("Search words work with one project or studio. Paste its link above.")
     items, heading = collect(parsed[0], parsed[1])
     kind, item = items[0]
+    wanted = list(scout.SORTS) if scout.settings.sort == "both" else [scout.settings.sort]
     with job_lock:
-        job.update(total=len(scout.SORTS), heading=f"{heading} for \"{query}\"")
+        job.update(total=len(wanted), heading=f"{heading} for \"{query}\"")
 
     matches = scout.count_matches(kind, query)
-    depths = {"popular": scout.SINGLE_DEPTH, "trending": scout.settings.trending_depth}
+    depth = depth_for(scout.SINGLE_DEPTH)
+    depths = {"popular": depth, "trending": min(depth, scout.settings.trending_depth)}
     lookups, sorts = {}, []
-    for sort in scout.SORTS:
+    for sort in wanted:
         lookup = scout.Lookup(kind, item, query, sort)
         lookup.matches = scout.format_count(matches).replace(",", "")
         scout.keep_looking(lookup, depths[sort])
@@ -173,9 +233,13 @@ def find_studios(session, words):
         raise scout.CheckError("Type what the studios should be about, like \"platformer games\".")
     with job_lock:
         job.update(total=1, heading=f"studios about \"{query}\"")
-    studios, note = scout.open_studios(query.split())
+
+    def step(done, total):  # checking how active each studio is takes a moment each
+        job.update(checked=done, total=total)
+
+    studios, note = scout.open_studios(query.split(), progress=step)
     with job_lock:
-        job["checked"] = 1
+        job["checked"] = job["total"]
         job["detail"] = {"query": query, "note": note, "studios": [
             {"title": scout.tidy(studio["title"]), "url": scout.item_url("studios", studio),
              "followers": scout.plural(scout.followers_of(studio), "follower"),
@@ -186,15 +250,15 @@ def find_studios(session, words):
 def find_searches(session, text):
     """Which searches a project or studio already comes up for."""
     kind, item = one_item(text, "This works with one project or studio. Paste its link above.")
-    sort = scout.title_sort()
+    sort, depth = scout.title_sort(), depth_for(scout.WORDS_DEPTH)
     with job_lock:
         job.update(total=1, heading=f"searches for \"{scout.tidy(item['title'])}\"")
-    ranked, unranked = scout.word_rankings(session, kind, item, (), scout.WORDS_DEPTH, sort)
+    ranked, unranked = scout.word_rankings(session, kind, item, (), depth, sort)
     with job_lock:
         job["checked"] = 1
         job["detail"] = {
             "title": scout.tidy(item["title"]), "url": scout.item_url(kind, item),
-            "kind": scout.NOUNS[kind], "sort": scout.SORTS[sort], "depth": f"{scout.WORDS_DEPTH:,}",
+            "kind": scout.NOUNS[kind], "sort": scout.SORTS[sort], "depth": f"{depth:,}",
             "ranked": [{"query": lookup.query, "rank": lookup.rank, "first": scout.on_first(lookup)}
                        for lookup in ranked[: max(scout.settings.top, 1)]],
             "unranked": [lookup.query for lookup in unranked],
@@ -208,6 +272,20 @@ def one_item(text, complaint):
         raise scout.CheckError(complaint)
     items, _ = collect(parsed[0], parsed[1])
     return items[0]
+
+
+def update_notice():
+    """What to put at the top of the page when a newer version is out.
+
+    The window build has no console, so the notice the console version prints
+    has to appear on the page instead.
+    """
+    if remembered().get("no_update_check"):
+        return {}
+    note = scout.update_note()
+    if not note:
+        return {}
+    return {"note": note.replace(f" Get it from {scout.RELEASES}", "").strip(), "url": scout.RELEASES}
 
 
 def history_page():
@@ -243,9 +321,11 @@ def collect(kind, value):
                    f"{scout.plural(len(studios), 'hosted studio')} by {user['username']}")
 
 
-def row(kind, item, lookup, status, change):
+def row(kind, item, lookup, status, change, place=None):
     """One line of results for the page."""
     return {
+        "place": place,
+        "scannable": bool(lookup.unfinished),
         "kind": scout.NOUNS[kind],
         "title": scout.tidy(item["title"]),
         "url": scout.item_url(kind, item),
@@ -262,7 +342,7 @@ def row(kind, item, lookup, status, change):
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path, _, query = self.path.partition("?")
-        asked = urllib.parse.parse_qs(query)
+        asked = urllib.parse.parse_qs(query, keep_blank_values=True)  # an emptied box means "clear it"
         if path == "/":
             page = PAGE.read_text(encoding="utf-8").replace("__VERSION__", scout.VERSION)
             self.send_file(page.encode("utf-8"), "text/html; charset=utf-8")
@@ -293,8 +373,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/progress":
             with job_lock:
                 self.send_json(dict(job))
+        elif path == "/scan":
+            start("titles", scan_deeper, asked.get("place", ["0"])[0], keep=True)
+            self.send_json({"started": True})
+        elif path == "/stop":
+            stopping.set()
+            self.send_json({"stopping": True})
+        elif path == "/update":
+            self.send_json(update_notice())
         elif path == "/settings":
             self.send_json(remembered())
+        elif path == "/save":
+            wanted = {name: asked[name][0].strip()
+                      for name in (*SETTING_FLAGS, *SETTING_SWITCHES) if name in asked}
+            try:
+                self.send_json(save_settings({**remembered(), **wanted}))
+            except scout.CheckError as error:
+                self.send_json({"error": str(error)})
         else:
             self.send_error(404)
 
