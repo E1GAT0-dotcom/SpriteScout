@@ -300,6 +300,29 @@ def offline_tests():
         message = printed(scout.find_studios, ["platformer"])
     check("says when no studios are open to everyone", "None found" in message, message)
 
+    # The window version: it serves its page and shares the console version's engine
+    import socketserver
+    import threading
+    import urllib.request
+
+    import spritescout_gui as gui
+
+    lookup = scout.Lookup("projects", {"id": 5, "title": "Demo", "stats": {"loves": 1}}, "Demo")
+    lookup.rank = 3
+    row = gui.describe("projects", lookup.item, lookup, "easy", "no change since 2026-09-01")
+    check("the window version describes results the same way the console does",
+          row["label"] == "Easy to find" and row["rank"] == 3 and row["count"] == "1 love"
+          and row["url"].endswith("/projects/5/") and row["change"] == "", row)
+
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), gui.Handler) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        address = f"http://127.0.0.1:{server.server_address[1]}/"
+        page = urllib.request.urlopen(address, timeout=10).read().decode("utf-8")
+        icon = urllib.request.urlopen(address + "icon.png", timeout=10)
+        server.shutdown()
+    check("the window version serves its page", f">{scout.VERSION}<" in page and "SpriteScout" in page
+          and "__VERSION__" not in page and icon.status == 200, page[:200])
+
     # Telling you when a newer version is out
     check("compares versions",
           scout.newer_version_line("1.9").startswith("SpriteScout 1.9 is out")

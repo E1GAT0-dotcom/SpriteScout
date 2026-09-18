@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpriteScout</title>
+<link rel="icon" href="/icon.png">
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0b0c0c;
+    --surface: #17181a;
+    --raised: #1f2123;
+    --ink: #f4f5f4;
+    --ink-2: #a9adab;
+    --muted: #7c817f;
+    --line: rgba(255, 255, 255, 0.09);
+    --brand: #00ff72;
+    --easy: #00ff72;
+    --buried: #ffc94a;
+    --new: #6aa8ff;
+    --unknown: #ff9b5a;
+    --missing: #ff6b6b;
+    --unsearchable: #9aa0a0;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --page: #f6f7f6;
+      --surface: #ffffff;
+      --raised: #f0f2f1;
+      --ink: #101211;
+      --ink-2: #4c524f;
+      --muted: #6d7370;
+      --line: rgba(0, 0, 0, 0.10);
+      --brand: #00a94a;
+      --easy: #00893d;
+      --buried: #9a6b00;
+      --new: #1f62c9;
+      --unknown: #a64f14;
+      --missing: #c22f2f;
+      --unsearchable: #6d7370;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 20px; border-bottom: 1px solid var(--line); background: var(--surface);
+    position: sticky; top: 0; z-index: 2;
+  }
+  header img { height: 34px; }
+  header .name { font-weight: 650; letter-spacing: 0.2px; }
+  header .version { color: var(--muted); font-size: 13px; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
+  .ask { display: flex; gap: 10px; }
+  input[type="text"] {
+    flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font: inherit;
+  }
+  input[type="text"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: transparent; }
+  button {
+    padding: 12px 20px; border: 0; border-radius: 10px; font: inherit; font-weight: 650;
+    background: var(--brand); color: #06120b; cursor: pointer;
+  }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
+  .bar { height: 4px; border-radius: 4px; background: var(--raised); margin: 22px 0 6px; overflow: hidden; }
+  .bar div { height: 100%; width: 0; background: var(--brand); transition: width 0.25s ease; }
+  .status { color: var(--ink-2); font-size: 14px; min-height: 20px; }
+  .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; background: color-mix(in srgb, currentColor 14%, transparent);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .easy { color: var(--easy); } .buried { color: var(--buried); } .new { color: var(--new); }
+  .unknown, .capped { color: var(--unknown); } .missing { color: var(--missing); }
+  .unsearchable { color: var(--unsearchable); }
+  .rows { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+  .row {
+    display: grid; grid-template-columns: 150px 64px 1fr; gap: 14px; align-items: center;
+    padding: 13px 16px; border-top: 1px solid var(--line);
+  }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: var(--raised); }
+  .rank { color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; }
+  .title { min-width: 0; }
+  .title a { color: var(--ink); text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
+  .title a:hover { text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
+  .why { grid-column: 1 / -1; color: var(--ink-2); font-size: 13px; background: var(--raised);
+         border-radius: 10px; padding: 10px 12px; margin-top: 2px; }
+  .problem { border: 1px solid var(--missing); color: var(--missing); border-radius: 12px; padding: 12px 14px; margin-top: 18px; }
+  @media (max-width: 620px) {
+    .row { grid-template-columns: 1fr; }
+    .rank { text-align: left; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="/icon.png" alt="">
+  <span class="name">SpriteScout</span>
+  <span class="version">__VERSION__</span>
+</header>
+<main>
+  <form class="ask" id="ask">
+    <input type="text" id="what" placeholder="Your username, or a project or studio link" autofocus spellcheck="false">
+    <button id="go">Check</button>
+  </form>
+  <p class="hint">Checks whether each project and studio comes up in Scratch search, and how far down.</p>
+
+  <div class="bar"><div id="fill"></div></div>
+  <div class="status" id="status"></div>
+  <div class="counts" id="counts"></div>
+  <div class="rows" id="rows" hidden></div>
+  <div class="problem" id="problem" hidden></div>
+</main>
+<script>
+const ask = document.getElementById("ask");
+const what = document.getElementById("what");
+const go = document.getElementById("go");
+const fill = document.getElementById("fill");
+const statusLine = document.getElementById("status");
+const counts = document.getElementById("counts");
+const rows = document.getElementById("rows");
+const problem = document.getElementById("problem");
+let polling = null;
+let shown = 0;
+
+ask.addEventListener("submit", async event => {
+  event.preventDefault();
+  const text = what.value.trim();
+  if (!text) return;
+  rows.replaceChildren();
+  rows.hidden = true;
+  counts.replaceChildren();
+  problem.hidden = true;
+  shown = 0;
+  fill.style.width = "0";
+  statusLine.textContent = "Asking Scratch…";
+  go.disabled = true;
+  await fetch("/check?what=" + encodeURIComponent(text));
+  clearInterval(polling);
+  polling = setInterval(poll, 700);
+  poll();
+});
+
+async function poll() {
+  const job = await (await fetch("/progress")).json();
+  if (job.error) {
+    problem.textContent = job.error;
+    problem.hidden = false;
+  }
+  if (job.heading && job.total) {
+    statusLine.textContent = job.state === "running"
+      ? `Checking ${job.heading}: ${job.checked} of ${job.total}`
+      : `Checked ${job.heading}`;
+    fill.style.width = `${(job.checked / job.total) * 100}%`;
+  }
+  for (const item of job.items.slice(shown)) addRow(item);
+  shown = job.items.length;
+  if (shown) rows.hidden = false;
+  summarise(job.items);
+  if (job.state !== "running") {
+    if (job.total) fill.style.width = "100%";
+    clearInterval(polling);
+    go.disabled = false;
+    if (!job.total && !job.error) statusLine.textContent = "Nothing to check.";
+  }
+}
+
+function addRow(item) {
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const chip = document.createElement("span");
+  chip.className = `chip ${item.status}`;
+  chip.append(dot(), text(item.label));
+  row.append(chip);
+
+  const rank = document.createElement("div");
+  rank.className = "rank";
+  rank.textContent = item.rank ? `#${item.rank.toLocaleString()}` : "—";
+  row.append(rank);
+
+  const title = document.createElement("div");
+  title.className = "title";
+  const link = document.createElement("a");
+  link.href = item.url;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = item.title;
+  const sub = document.createElement("div");
+  sub.className = "sub";
+  sub.textContent = [item.kind, item.count, item.change].filter(Boolean).join(" · ");
+  title.append(link, sub);
+  row.append(title);
+
+  if (item.status !== "easy") {
+    const why = document.createElement("div");
+    why.className = "why";
+    why.textContent = item.advice;
+    row.append(why);
+  }
+  rows.append(row);
+}
+
+function summarise(items) {
+  const tally = new Map();
+  for (const item of items) tally.set(item.label, [(tally.get(item.label)?.[0] || 0) + 1, item.status]);
+  counts.replaceChildren();
+  for (const [label, [count, status]] of tally) {
+    const chip = document.createElement("span");
+    chip.className = `chip ${status}`;
+    chip.append(dot(), text(`${label}: ${count}`));
+    counts.append(chip);
+  }
+}
+
+const dot = () => Object.assign(document.createElement("span"), {className: "dot"});
+const text = value => document.createTextNode(value);
+
+</script>
+</body>
+</html>

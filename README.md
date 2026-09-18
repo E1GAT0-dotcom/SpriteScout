@@ -37,6 +37,17 @@ Type `help` in the window to see every command and flag.
 Once a day it asks GitHub whether a newer version is out, and says so if there
 is one. `--no-update-check` turns that off.
 
+### The window version
+
+There's also a version with a window, which opens a page in your browser
+instead of a text prompt. It's early: it checks a username, a project or a
+studio and shows the results as a colour-coded list. The rest of the features
+are still console-only. Run it from the source with:
+
+```
+python spritescout_gui.py
+```
+
 ## What it looks like
 
 Checking my own account:
