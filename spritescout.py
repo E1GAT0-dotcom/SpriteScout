@@ -1214,10 +1214,17 @@ def title_ideas(item, extra_words=()):
 
 
 def first_screen_chance(kind, item, title):
-    """What a title is up against: (results on page one, the lowest stat there, would it get on)."""
+    """What a title is up against: (results on page one, the lowest stat there, would it get on).
+
+    A title it already has puts it in those results, and then its place is a
+    fact. Loves only have to be guessed from for a title it hasn't got yet.
+    """
     page = search_page(kind, title, title_sort(), 0, PAGE_SIZE)
-    stats = [stat_of(kind, other) for other in page[: settings.first_screen] if other["id"] != item["id"]]
+    front = page[: settings.first_screen]
+    stats = [stat_of(kind, other) for other in front if other["id"] != item["id"]]
     lowest = min(stats) if stats else 0
+    if any(other["id"] == item["id"] for other in page):
+        return len(page), lowest, any(other["id"] == item["id"] for other in front)
     return len(page), lowest, len(page) < settings.first_screen or stat_of(kind, item) >= lowest
 
 

@@ -343,10 +343,11 @@ def offline_tests():
           scout.keep_words(shouty) == ["MAGIE", "iPhone"], scout.keep_words(shouty))
 
     crowds = {
-        "Sand box": [{"id": n, "title": "Sand box", "stats": {"loves": 8}} for n in range(40)],
-        "Sandbox": [{"id": n, "title": "Sandbox", "stats": {"loves": 90}} for n in range(40)],
-        "Sand Clicker": [{"id": n, "title": "Sand Clicker", "stats": {"loves": 2}} for n in range(40)],
-        "Sand Idle": [{"id": n, "title": "Sand Idle", "stats": {"loves": 1}} for n in range(20)],
+        "Sand box": [{"id": 100 + n, "title": "Sand box", "stats": {"loves": 8}} for n in range(30)]
+                    + [{"id": 5, "title": "Sand box", "stats": {"loves": 3}}],  # itself, down at 31
+        "Sandbox": [{"id": 200 + n, "title": "Sandbox", "stats": {"loves": 90}} for n in range(40)],
+        "Sand Clicker": [{"id": 300 + n, "title": "Sand Clicker", "stats": {"loves": 2}} for n in range(40)],
+        "Sand Idle": [{"id": 400 + n, "title": "Sand Idle", "stats": {"loves": 1}} for n in range(20)],
         "Box Clicker": [{"id": 5, "title": "Sand box", "stats": {"loves": 3}}],  # only itself
     }
 
@@ -360,6 +361,8 @@ def offline_tests():
           names[:2] == ["Sand Clicker", "Sand Idle"] and "Sandbox" not in names, names)
     check("counts how it does now, and how many ideas it turned down",
           now["wins"] is False and now["lowest"] == 8 and now["beaten"] >= 1, now)
+    check("takes the place it already holds as a fact, instead of guessing from loves",
+          now["wins"] is False, now)  # 3 loves beats the 8 there, but it is really down at 31
     check("leaves made-up joined words out of the only-result list",
           "Sandbox Clicker" in empty and "Sandbox" not in empty and "Box Clicker" not in empty, empty)
     check("a search where only this project matches still counts as winnable",
