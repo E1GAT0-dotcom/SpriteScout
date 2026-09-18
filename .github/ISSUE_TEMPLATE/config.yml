@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Download the latest version
+    url: https://github.com/E1GAT0-dotcom/SpriteScout/releases/latest
+    about: Worth checking first — the thing you hit may already be fixed.
+  - name: How Scratch search actually behaves
+    url: https://github.com/E1GAT0-dotcom/SpriteScout#what-i-found-out-about-scratch-search
+    about: Why projects get buried, and what moves them up.

@@ -1,0 +1,54 @@
+name: Something went wrong
+description: SpriteScout crashed, got stuck, or said something that isn't true
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for saying so. The more of this you fill in, the faster it gets fixed.
+  - type: input
+    id: version
+    attributes:
+      label: Which version
+      description: The number next to the name at the top of the page, or the first line the text version prints.
+      placeholder: "2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which download
+      options:
+        - GUI version (buttons in the browser)
+        - Text version (typed commands)
+        - Ran it with Python from the source
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Which system
+      options:
+        - Windows
+        - Mac
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did, and what happened
+      description: The username, project link or search words you gave it, and what it said back.
+      placeholder: |
+        I checked scratch.mit.edu/projects/1374651531/ and it said…
+        I expected it to say…
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: The error report, if there was one
+      description: >
+        When SpriteScout hits a bug it saves a file in the `output` folder whose
+        name starts with `error-`. Paste it here, or drag the file in.
+      render: text

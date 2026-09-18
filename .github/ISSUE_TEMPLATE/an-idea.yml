@@ -1,0 +1,25 @@
+name: An idea
+description: Something SpriteScout could do that would help you get found
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like it to do
+      placeholder: When a project drops out of search, it could…
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What would that help with
+      description: What you're trying to work out about your own projects or studios.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it belong
+      options:
+        - Both versions
+        - The GUI version
+        - The text version
+        - Not sure
