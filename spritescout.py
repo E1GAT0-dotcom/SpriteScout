@@ -1396,8 +1396,8 @@ class Session:
         """A follow-up command: as typed in the window, or as run in a terminal."""
         if self.interactive:
             return " ".join(parts)
-        program = [sys.argv[0]] if FROZEN else ["python", sys.argv[0]]
-        return subprocess.list2cmdline(program + list(parts))
+        command = ([sys.argv[0]] if FROZEN else ["python", sys.argv[0]]) + list(parts)
+        return subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
 
     def item_command(self, lookup, words=()):
         prefix = ["studio"] if lookup.kind == "studios" else []
