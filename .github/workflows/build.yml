@@ -19,6 +19,12 @@ on:
 permissions:
   contents: write
 
+# Publishing a release also creates its tag, which starts a second identical
+# run. One is enough, so the newer run replaces the older one.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Every push gets the quick tests; only tags and releases get the builds.
   tests:
