@@ -23,7 +23,7 @@ do the same checks. Pick one:
 | System | GUI version | Text version |
 |---|---|---|
 | Windows | `SpriteScout-gui-windows.exe` | `SpriteScout-windows.exe` |
-| Mac (Apple Silicon) | `SpriteScout-gui-mac.zip` | `SpriteScout-mac.zip` |
+| Mac (Apple Silicon) | `SpriteScout-gui-mac.dmg` | `SpriteScout-mac.zip` |
 | Linux | `SpriteScout-gui-linux.zip` | `SpriteScout-linux.zip` |
 
 The **GUI version** opens in a window of its own, with tabs and buttons and no
@@ -34,19 +34,36 @@ closing it stops there.
 The **text version** runs in a terminal and takes typed commands. It's smaller,
 it's what the tests drive, and it's handy if you like the keyboard.
 
-Neither is signed, so systems get suspicious about them:
+### Opening it the first time
 
-- Windows sometimes blocks or warns about unsigned programs. If that happens,
-  download the source and double-click `SpriteScout.bat`, which runs the same
-  tool with Python.
-- Mac: unzip it. Drag the GUI app into Applications; the text version is a file
-  called `SpriteScout` that opens in Terminal. Either way, right-click it the
-  first time and choose Open.
-- Linux: unzip it and run `./SpriteScout`.
+- **Mac:** open the `.dmg` and drag SpriteScout onto the Applications folder next
+  to it. The text version unzips to a file called `SpriteScout` that opens in
+  Terminal. The first time, macOS says it can't check the app: open **System
+  Settings → Privacy & Security**, scroll to the bottom and click **Open Anyway**.
+  (Before macOS 15 you could right-click it and choose Open instead.) After that
+  it opens normally.
+- **Windows:** if SmartScreen says it protected your PC, click **More info**, then
+  **Run anyway**. If Windows blocks it outright, download the source and
+  double-click `SpriteScout.bat`, which runs the same tool with Python.
+- **Linux:** unzip it and run `./SpriteScout`. Nothing blocks it.
 
-The Mac and Linux downloads are zips on purpose. Downloading a program strips
-its permission to run, so a bare file opens as a page of gibberish instead;
-unzipping gives it back.
+The Mac and Linux downloads come as a disk image or a zip on purpose.
+Downloading a program strips its permission to run, so a bare file opens as a
+page of gibberish instead; opening the disk image or unzipping gives it back.
+
+### Why computers warn about it
+
+Macs and Windows trust a program without asking once its maker has paid for a
+certificate that proves who they are. SpriteScout doesn't have one yet:
+
+- On a Mac that's the Apple Developer Program: $99 a year, and it needs an adult
+  to sign up. With it, the build here can sign and notarize the app so it opens
+  like any other.
+- On Windows, [SignPath Foundation](https://signpath.org/terms.html) signs
+  open-source projects like this one for free. Their certificate says "SignPath
+  Foundation" rather than SpriteScout, and Windows still builds trust in a
+  program over its first downloads.
+- Linux doesn't ask.
 
 Any system with Python 3.8 or newer can skip the downloads:
 

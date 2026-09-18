@@ -707,9 +707,10 @@ def nothing_opened(address):
         time.sleep(0.5)
         if page_served.is_set():
             return
-    complain(f"SpriteScout is running, but nothing opened it.\n\n"
+    complain(f"SpriteScout is running, but nothing has opened it after 20 seconds.\n\n"
              f"Type this into a browser and it will be there:\n{address}\n\n"
-             "Something on this computer may be stopping it, like a security program.", fatal=False)
+             "If no browser appeared, this computer may not have one set up to open links. "
+             "If one did, something like a security program may be stopping it.", fatal=False)
 
 
 def main():
@@ -717,7 +718,8 @@ def main():
     if sys.stdout is None or sys.stderr is None:
         sys.stdout = sys.stderr = open(os.devnull, "w")
     else:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        # Line by line, so a message isn't held back when the output goes to a file.
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 
     problems = start_problems()
     if problems:

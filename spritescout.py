@@ -29,6 +29,7 @@ import os
 import platform
 import re
 import shlex
+import ssl
 import statistics
 import subprocess
 import sys
@@ -295,6 +296,54 @@ def help_text():
 request_delay = REQUEST_DELAY
 
 
+# Where systems keep the certificates that prove a website is who it says it is.
+# A built copy looks for the ones on the computer it was built on, and on a Mac
+# those usually aren't there, so every connection to Scratch would fail.
+CERTIFICATE_BUNDLES = ["/etc/ssl/cert.pem",  # macOS, and some Linux
+                       "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu
+                       "/etc/pki/tls/certs/ca-bundle.crt",  # Fedora
+                       "/etc/ssl/ca-bundle.pem",  # openSUSE
+                       "/usr/local/etc/openssl/cert.pem"]
+
+
+def has_files(folder):
+    try:
+        return bool(folder) and any(os.scandir(folder))
+    except OSError:
+        return False
+
+
+def certificate_file():
+    """The certificates to trust, when the ones Python expects aren't there. None means they are."""
+    if sys.platform == "win32":
+        return None  # Windows hands over its own, however Python was built
+    usual = ssl.get_default_verify_paths()
+    if usual.cafile or has_files(usual.capath):
+        return None
+    try:
+        import certifi  # in some copies, never needed
+        return certifi.where()
+    except ImportError:
+        pass
+    return next((bundle for bundle in CERTIFICATE_BUNDLES if os.path.exists(bundle)), None)
+
+
+@functools.lru_cache(maxsize=1)
+def secure_connection():
+    """The settings every connection to Scratch and GitHub uses."""
+    return ssl.create_default_context(cafile=certificate_file())
+
+
+def connection_trouble(error):
+    """Why a connection failed, in words, or "" when there's nothing useful to add."""
+    reason = getattr(error, "reason", error)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return "certificate"
+    if isinstance(reason, (TimeoutError, OSError)) and getattr(reason, "strerror", None):
+        return reason.strerror
+    return str(reason) if reason and not isinstance(reason, TimeoutError) else ""
+
+
 def get_json(path, params=None):
     """GET a Scratch API path. Returns None for 404 and retries when Scratch is busy."""
     global request_delay
@@ -305,7 +354,7 @@ def get_json(path, params=None):
     for attempt in range(1, 7):
         attempts = 3  # tries before giving up; waiting out "too many requests" gets more
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=30, context=secure_connection()) as response:
                 data = json.load(response)
             time.sleep(request_delay)
             return data
@@ -329,10 +378,21 @@ def get_json(path, params=None):
                 raise CheckError(f"Scratch refused the request (error {error.code}). If this keeps happening, "
                                  "your network may be blocking Scratch.")
         except (TimeoutError, urllib.error.URLError) as error:
+            trouble = connection_trouble(error)
+            if trouble == "certificate":
+                # Trying again won't change the answer, so say so straight away.
+                reason = getattr(error, "reason", error)
+                raise CheckError(
+                    "SpriteScout reached Scratch but couldn't check its security certificate, so it "
+                    f"stopped ({getattr(reason, 'verify_message', '') or reason}).\n\n"
+                    "On a school or work network this usually means the network inspects secure "
+                    "connections itself; another network, like a phone hotspot, will work. Anywhere "
+                    f"else, please report it at {RELEASES.rsplit('/', 1)[0]}/issues") from None
             timed_out = isinstance(error, TimeoutError) or isinstance(getattr(error, "reason", None), TimeoutError)
             wait, note = 2 ** attempt, "Couldn't reach Scratch"
+            detail = f" ({trouble})" if trouble else ""
             problem = ("Scratch is taking too long to answer. Try again in a minute." if timed_out else
-                       "Can't reach Scratch. Check your internet connection, then try again.")
+                       f"Can't reach Scratch{detail}. Check your internet connection, then try again.")
         except (OSError, ValueError):  # the connection dropped, or the answer wasn't readable data
             wait, note = 2 ** attempt, "Scratch's answer got cut off"
             problem = "Scratch sent back something unexpected. Try again in a minute."
@@ -457,7 +517,7 @@ def update_note():
     version = saved.get("version")
     try:
         request = urllib.request.Request(LATEST_RELEASE, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=5, context=secure_connection()) as response:
             version = json.load(response).get("tag_name", "").lstrip("vV") or version
     except Exception:  # an update check is never worth an error message
         pass

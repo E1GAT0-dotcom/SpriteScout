@@ -46,7 +46,8 @@ jobs:
           # The text version, and the GUI version that opens in a window of its own.
           # Everything but Windows goes out as a zip: a browser strips the permission
           # a program needs to run, so a bare download opens as a page of gibberish.
-          # Unzipping puts it back.
+          # Unzipping puts it back. The Mac app goes out the way Mac apps do: a disk
+          # image that opens onto the app and an Applications folder to drag it to.
           - os: windows-latest
             program: spritescout.py
             built: dist/SpriteScout.exe
@@ -70,7 +71,7 @@ jobs:
           - os: macos-latest
             program: spritescout_gui.py
             built: dist/SpriteScout.app
-            asset: SpriteScout-gui-mac.zip
+            asset: SpriteScout-gui-mac.dmg
             extra: --windowed --icon icon.icns --add-data "gui.html:." --add-data "icon.png:."
           - os: ubuntu-latest
             program: spritescout_gui.py
@@ -93,13 +94,42 @@ jobs:
           pip install pyinstaller==6.22.3
           pyinstaller --onefile --name SpriteScout ${{ matrix.extra }} ${{ matrix.program }}
 
+      - name: Check the finished program can reach Scratch from somebody else's computer
+        if: matrix.program == 'spritescout.py'
+        shell: bash
+        env:
+          # The build machine's certificates, gone, as they are on the computer
+          # someone downloads this to. Without its own fallback it couldn't connect.
+          SSL_CERT_FILE: /nowhere/cert.pem
+          SSL_CERT_DIR: /nowhere/certs
+          BUILT: ${{ matrix.built }}
+        run: |
+          answer=$("$BUILT" 74763380 --no-log --no-update-check --depth 40 2>&1) || true
+          echo "$answer"
+          if ! grep -q "Pizza Rush" <<< "$answer"; then
+            echo "The finished program couldn't talk to Scratch, so nobody who downloads it could either."
+            exit 1
+          fi
+
       - name: Name it after the system it's for
         shell: bash
         env:
           BUILT: ${{ matrix.built }}
           ASSET: ${{ matrix.asset }}
         run: |
-          if [[ "$ASSET" != *.zip ]]; then
+          if [[ "$ASSET" == *.dmg ]]; then
+            mkdir disk && cp -R "$BUILT" disk/
+            brew install create-dmg > /dev/null
+            # The window people expect: the app on the left, Applications on the right.
+            if ! create-dmg --volname SpriteScout --volicon icon.icns --window-size 560 360 \
+                   --icon-size 128 --icon SpriteScout.app 150 170 --hide-extension SpriteScout.app \
+                   --app-drop-link 410 170 "$ASSET" disk/; then
+              echo "Couldn't arrange the window, so making a plain one with the same two things in it."
+              rm -f "$ASSET"
+              ln -s /Applications disk/Applications
+              hdiutil create -volname SpriteScout -srcfolder disk -ov -format UDZO "$ASSET"
+            fi
+          elif [[ "$ASSET" != *.zip ]]; then
             mv "$BUILT" "$ASSET"
           elif [[ "$RUNNER_OS" == "macOS" && -d "$BUILT" ]]; then
             # ditto keeps the permission to run, and keeps a .app folder whole.
@@ -125,6 +155,19 @@ jobs:
             exit 1
           fi
           echo "Unzips to a program that can run: $program"
+
+      - name: Check the disk image opens onto the app and Applications
+        if: endsWith(matrix.asset, '.dmg')
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          hdiutil attach "$ASSET" -mountpoint /tmp/spritescout-disk -nobrowse -quiet
+          ls -la /tmp/spritescout-disk
+          test -x /tmp/spritescout-disk/SpriteScout.app/Contents/MacOS/SpriteScout
+          test -L /tmp/spritescout-disk/Applications
+          hdiutil detach /tmp/spritescout-disk -quiet
+          echo "Opens onto SpriteScout.app and an Applications folder to drag it to."
 
       - uses: actions/upload-artifact@v4
         with:

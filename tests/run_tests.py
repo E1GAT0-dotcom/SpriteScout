@@ -15,6 +15,7 @@ import argparse
 import io
 import json
 import os
+import ssl
 import shutil
 import stat
 import subprocess
@@ -665,9 +666,9 @@ def offline_tests():
             self.close()
 
     settings("--output", str(RUN / "offline" / "update"))
-    with Patch(scout.urllib.request, urlopen=lambda request, timeout=None: Answer(b'{"tag_name": "v9.9"}')):
+    with Patch(scout.urllib.request, urlopen=lambda request, timeout=None, context=None: Answer(b'{"tag_name": "v9.9"}')):
         first = scout.update_note()
-    def refuse(request, timeout=None):
+    def refuse(request, timeout=None, context=None):
         raise AssertionError("checked twice in one day")
     with Patch(scout.urllib.request, urlopen=refuse):
         second = scout.update_note()
@@ -678,7 +679,7 @@ def offline_tests():
         settings("--output", str(RUN / "offline" / "update2"), "--no-update-check")
         check("skips the check when asked", scout.update_note() == "")
         settings("--output", str(RUN / "offline" / "update3"))
-        def fail(request, timeout=None):
+        def fail(request, timeout=None, context=None):
             raise urllib.error.URLError("no internet")
         with Patch(scout.urllib.request, urlopen=fail):
             quiet = scout.update_note()
@@ -695,7 +696,7 @@ def offline_tests():
     def pretend_internet(*answers):
         answers = iter(answers)
 
-        def urlopen(request, timeout=None):
+        def urlopen(request, timeout=None, context=None):
             answer = next(answers)
             if isinstance(answer, BaseException):
                 raise answer
@@ -710,6 +711,12 @@ def offline_tests():
         ("waits out too many requests, then carries on", [http_error(429), b'{"ok": 1}'], {"ok": 1}, None),
         ("explains server trouble", [http_error(503)] * 3, None, "servers are having trouble"),
         ("explains having no internet", [urllib.error.URLError("getaddrinfo failed")] * 3, None, "Can't reach Scratch"),
+        ("says why it couldn't reach Scratch, not just that it couldn't",
+         [urllib.error.URLError(OSError(8, "nodename nor servname provided"))] * 3, None,
+         "(nodename nor servname provided)"),
+        ("says a certificate problem is a certificate problem, not the internet",
+         [urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed"))], None,
+         "security certificate"),
         ("explains timeouts", [TimeoutError()] * 3, None, "taking too long"),
         ("explains answers that aren't data", [b"<html>"] * 3, None, "something unexpected"),
         ("explains requests Scratch can't handle", [http_error(400)], None, "couldn't handle"),
@@ -723,6 +730,26 @@ def offline_tests():
             except scout.CheckError as error:
                 check(name, phrase is not None and phrase in str(error), str(error))
     scout.request_delay = scout.REQUEST_DELAY
+
+    # A built copy on a Mac looks for certificates where they were on the machine
+    # that built it. When they aren't there, it has to find the Mac's own.
+    class Paths:
+        def __init__(self, cafile=None, capath=None):
+            self.cafile, self.capath = cafile, capath
+
+    mac_bundle = RUN / "offline" / "cert.pem"
+    mac_bundle.write_text("pretend certificates", encoding="utf-8")
+    with Patch(scout.sys, platform="darwin"), Patch(scout, CERTIFICATE_BUNDLES=[str(mac_bundle)]), \
+            Patch(scout.ssl, get_default_verify_paths=lambda: Paths()), \
+            Patch(sys, modules={**sys.modules, "certifi": None}):
+        found_mac = scout.certificate_file()
+    with Patch(scout.sys, platform="darwin"), \
+            Patch(scout.ssl, get_default_verify_paths=lambda: Paths(cafile="/its/own/cert.pem")):
+        kept_own = scout.certificate_file()
+    with Patch(scout.sys, platform="win32"), Patch(scout.ssl, get_default_verify_paths=lambda: Paths()):
+        windows = scout.certificate_file()
+    check("finds the Mac's own certificates when a built copy can't find its own",
+          found_mac == str(mac_bundle) and kept_own is None and windows is None, (found_mac, kept_own, windows))
 
     # Bugs get a plain explanation and a saved report
     settings()
