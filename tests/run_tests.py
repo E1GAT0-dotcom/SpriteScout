@@ -361,9 +361,11 @@ def offline_tests():
         check("the GUI version remembers your username", gui.remembered().get("username") == "demo",
               gui.remembered())
 
-        gui.save_settings({"sort": "trending", "depth": "500", "first_screen": "", "top": "3"})
+        gui.save_settings({"sort": "trending", "depth": "500", "first_screen": "", "top": "3",
+                           "max_projects": "10"})
         check("the GUI version passes saved settings to the checks",
-              gui.saved_flags() == ["--sort", "trending", "--depth", "500", "--top", "3"],
+              gui.saved_flags() == ["--sort", "trending", "--depth", "500", "--top", "3",
+                                    "--max-projects", "10"],
               gui.saved_flags())
         try:
             gui.save_settings({"depth": "99999"})
@@ -387,6 +389,24 @@ def offline_tests():
                 return gui.job["error"]
             time.sleep(0.1)
         return "(never finished)"
+
+    def studio_with_two(path, asked=None):
+        if path == "/studios/4":
+            return {"id": 4, "title": "Sandbox Studio", "stats": {"followers": 2}}
+        if path == "/studios/4/projects":
+            return [{"id": 11, "title": "One", "username": "someone"},
+                    {"id": 12, "title": "Two", "username": "someone"}][: asked["limit"]]
+        return None
+
+    with Patch(scout, get_json=studio_with_two):
+        scout.get_studio.cache_clear()
+        just_studio, studio_heading = gui.collect("studio", "4")
+        inside, inside_heading = gui.collect("studio", "4", contents=True)
+        scout.get_studio.cache_clear()
+    check("the GUI version can check the projects inside a studio, like --contents does",
+          just_studio[0][0] == "studios" and len(inside) == 2 and inside[0][0] == "projects"
+          and "2 projects in" in inside_heading and studio_heading.startswith("the studio"),
+          (just_studio, inside_heading))
 
     check("the GUI version explains search words without a project",
           "one project or studio" in gui_error(gui.check_words, "griffpatch", "platformer"))

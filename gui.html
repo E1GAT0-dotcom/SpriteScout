@@ -90,7 +90,11 @@
   #ask-settings label.tickbox {
     flex-direction: row; align-items: center; gap: 8px; flex: 0 0 auto; padding-bottom: 13px;
   }
-  #ask-settings input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); }
+  label.side {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    color: var(--ink-2); font-size: 13px; font-weight: 600;
+  }
+  input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); }
   button.go {
     padding: 12px 20px; border: 0; border-radius: 10px; font: inherit; font-weight: 650;
     background: var(--brand); color: #06120b; cursor: pointer;
@@ -197,6 +201,10 @@
       <input type="text" id="what" placeholder="Your username, or a project or studio link" autofocus spellcheck="false">
       <button class="go">Check</button>
     </form>
+    <label class="tickbox side">
+      <input type="checkbox" id="inside">
+      For a studio, check the projects inside it instead
+    </label>
     <p class="hint">Checks whether each project and studio comes up in Scratch search, and how far down.</p>
     <button class="quick" id="quick" hidden></button>
   </section>
@@ -253,6 +261,9 @@
       <label>Results the finders list
         <input type="number" id="set-top" min="1" placeholder="10">
       </label>
+      <label>Most projects to check
+        <input type="number" id="set-max_projects" min="1" placeholder="all">
+      </label>
       <label class="tickbox">
         <input type="checkbox" id="set-updates" checked>
         Tell me about new versions
@@ -277,7 +288,7 @@ const element = id => document.getElementById(id);
 const fill = element("fill"), statusLine = element("status"), counts = element("counts");
 const rows = element("rows"), detail = element("detail"), problem = element("problem");
 const stopButton = element("stop");
-const settingNames = ["sort", "depth", "first_screen", "top"];
+const settingNames = ["sort", "depth", "first_screen", "top", "max_projects"];
 let polling = null, drawn = [], running = false;
 
 for (const tab of document.querySelectorAll("button.tab")) {
@@ -292,7 +303,8 @@ for (const tab of document.querySelectorAll("button.tab")) {
 element("ask-titles").addEventListener("submit", event => {
   event.preventDefault();
   const what = element("what").value.trim();
-  if (what) begin("/check?what=" + encodeURIComponent(what));
+  const inside = element("inside").checked ? "&contents=1" : "";
+  if (what) begin("/check?what=" + encodeURIComponent(what) + inside);
 });
 
 element("ask-words").addEventListener("submit", event => {

@@ -57,15 +57,16 @@ so when it starts, and the GUI version puts a bar at the top of the page.
 
 Each tab is one of the checks, and results appear as they arrive:
 
-- **Check** — a username, project or studio, colour-coded by how findable it is
+- **Check** — a username, project or studio, colour-coded by how findable it
+  is, or every project inside a studio
 - **Search words** — where something ranks for words people type, and what
   would move it up
 - **Try titles** — how crowded each title you're considering already is
 - **Find studios** — studios about a topic that anyone can add projects to
 - **Where it ranks** — the searches something already comes up for
 - **History** — the chart page of every check you've run
-- **Settings** — sort, how deep to look, what counts as the first screen, and
-  whether to mention new versions
+- **Settings** — sort, how deep to look, what counts as the first screen, how
+  many projects to check at most, and whether to mention new versions
 
 **Keep looking** appears on anything the check stopped short of, and carries on
 to the end of search. **Stop** ends a long check without losing the rows that
@@ -137,7 +138,7 @@ There's more, but only if you ask for it:
 | `--find-studios WORDS` | Active studios about WORDS that anyone can add projects to |
 | `--titles "A" "B"` | Compares titles you're thinking about before you rename |
 | `--find-words` | Lists searches your project already comes up for |
-| `--contents` | Checks every project in a studio |
+| `--contents` | Checks every project in a studio (a tickbox in the GUI version) |
 | `--history` | A page with charts of your ranks over time |
 | `--scan` | Keeps looking past where a check normally stops (press q to stop) |
 

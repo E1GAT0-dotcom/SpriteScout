@@ -31,7 +31,8 @@ job_lock = threading.Lock()
 unfinished = {}  # row number -> (kind, item, lookup) for results a scan could look deeper for
 stopping = threading.Event()
 
-SETTING_FLAGS = {"sort": "--sort", "depth": "--depth", "first_screen": "--first-screen", "top": "--top"}
+SETTING_FLAGS = {"sort": "--sort", "depth": "--depth", "first_screen": "--first-screen",
+                 "top": "--top", "max_projects": "--max-projects"}
 SETTING_SWITCHES = {"no_update_check": "--no-update-check"}  # settings that are on or off
 
 
@@ -130,14 +131,14 @@ def depth_for(usual):
     return scout.clamp_depth(scout.settings.depth or usual)
 
 
-def check_titles(session, text):
+def check_titles(session, text, contents=False):
     """Check a username, project or studio by title, adding rows as they finish."""
     parsed = scout.parse_command(scout.split_command(text))
     if not parsed:
         raise scout.CheckError(f"I can't tell what \"{text}\" is. Type a username, or paste a project "
                                "or studio link.")
     kind, value, _ = parsed
-    items, heading = collect(kind, value)
+    items, heading = collect(kind, value, contents=contents)
     if kind == "user":
         remember({"username": value})
     with job_lock:
@@ -324,13 +325,23 @@ def history_page():
     return scout.HISTORY_PAGE.replace("__DATA__", scout.history_json(rows, log.name))
 
 
-def collect(kind, value):
-    """The projects and studios a command asks about, and a heading for them."""
+def collect(kind, value, contents=False):
+    """The projects and studios a command asks about, and a heading for them.
+
+    `contents` asks for the projects inside a studio instead of the studio itself.
+    """
     if kind == "studio":
         studio = scout.get_studio(int(value))
         if not studio:
             raise scout.CheckError(f"There's no studio with ID {value}.")
-        return [("studios", studio)], f"the studio \"{scout.tidy(studio['title'])}\""
+        name = f"the studio \"{scout.tidy(studio['title'])}\""
+        if not contents:
+            return [("studios", studio)], name
+        projects = scout.get_studio_projects(studio["id"])[: scout.settings.max_projects or None]
+        if not projects:
+            raise scout.CheckError(f"There are no projects in {name}.")
+        return ([("projects", project) for project in projects],
+                f"{scout.plural(len(projects), 'project')} in {name}")
     project = scout.get_json(f"/projects/{value}") if kind != "user" else None
     if project:
         return [("projects", project)], scout.describe("projects", project)
@@ -376,7 +387,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/icon.png" and ICON.exists():
             self.send_file(ICON.read_bytes(), "image/png")
         elif path == "/check":
-            self.send_started(start("titles", check_titles, asked.get("what", [""])[0].strip()))
+            self.send_started(start("titles", check_titles, asked.get("what", [""])[0].strip(),
+                                    bool(asked.get("contents", [""])[0])))
         elif path == "/words":
             self.send_started(start("words", check_words, asked.get("what", [""])[0].strip(),
                                     asked.get("words", [""])[0]))
