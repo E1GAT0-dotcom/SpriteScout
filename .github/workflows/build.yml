@@ -43,7 +43,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The console version, and the window version that opens a page in the browser.
+          # The text version, and the GUI version that opens a page in the browser.
           - os: windows-latest
             program: spritescout.py
             built: dist/SpriteScout.exe
@@ -62,17 +62,17 @@ jobs:
           - os: windows-latest
             program: spritescout_gui.py
             built: dist/SpriteScout.exe
-            asset: SpriteScout-window-windows.exe
+            asset: SpriteScout-gui-windows.exe
             extra: --windowed --icon icon.ico --add-data "gui.html;." --add-data "icon.png;."
           - os: macos-latest
             program: spritescout_gui.py
             built: dist/SpriteScout.app
-            asset: SpriteScout-window-mac.zip
+            asset: SpriteScout-gui-mac.zip
             extra: --windowed --icon icon.icns --add-data "gui.html:." --add-data "icon.png:."
           - os: ubuntu-latest
             program: spritescout_gui.py
             built: dist/SpriteScout
-            asset: SpriteScout-window-linux
+            asset: SpriteScout-gui-linux
             extra: --add-data "gui.html:." --add-data "icon.png:."
     runs-on: ${{ matrix.os }}
     steps:

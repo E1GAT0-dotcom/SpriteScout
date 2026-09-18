@@ -19,13 +19,13 @@ There are two versions on the
 [releases page](https://github.com/E1GAT0-dotcom/SpriteScout/releases), and they
 do the same checks. Pick one:
 
-| System | Window version | Text version |
+| System | GUI version | Text version |
 |---|---|---|
-| Windows | `SpriteScout-window-windows.exe` | `SpriteScout-windows.exe` |
-| Mac (Apple Silicon) | `SpriteScout-window-mac.zip` | `SpriteScout-mac` |
-| Linux | `SpriteScout-window-linux` | `SpriteScout-linux` |
+| Windows | `SpriteScout-gui-windows.exe` | `SpriteScout-windows.exe` |
+| Mac (Apple Silicon) | `SpriteScout-gui-mac.zip` | `SpriteScout-mac` |
+| Linux | `SpriteScout-gui-linux` | `SpriteScout-linux` |
 
-The **window version** opens a page in your browser with tabs and buttons, and
+The **GUI version** opens a page in your browser with tabs and buttons, and
 no typing of commands. Nothing is uploaded: the page is served by the program on
 your own computer, and closing it stops there.
 
@@ -43,17 +43,17 @@ Neither is signed, so systems get suspicious about them:
 Any system with Python 3.8 or newer can skip the downloads:
 
 ```
-python spritescout_gui.py    the window version
+python spritescout_gui.py    the GUI version
 python spritescout.py        the text version
 ```
 
 Type `help` in the text version to see every command and flag.
 
 Once a day it asks GitHub whether a newer version is out: the text version says
-so when it starts, and the window version puts a bar at the top of the page.
+so when it starts, and the GUI version puts a bar at the top of the page.
 `--no-update-check` turns that off, as does the tickbox in Settings.
 
-### What the window version has
+### What the GUI version has
 
 Each tab is one of the checks, and results appear as they arrive:
 
