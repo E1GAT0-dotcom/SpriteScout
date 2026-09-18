@@ -3,6 +3,7 @@
 # SpriteScout
 
 [![Build](https://github.com/E1GAT0-dotcom/SpriteScout/actions/workflows/build.yml/badge.svg)](https://github.com/E1GAT0-dotcom/SpriteScout/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/E1GAT0-dotcom/SpriteScout?label=download)](https://github.com/E1GAT0-dotcom/SpriteScout/releases/latest)
 
 I kept sharing games that nobody could find, so I made this to see whether my
 Scratch projects and studios actually show up in Scratch search, and what it
@@ -112,6 +113,9 @@ help:
 ```
 
 ## Using it
+
+What follows is the text version, where you type things. The GUI version has all
+of it as tabs and buttons instead.
 
 Give it a username, a project or a studio:
 
