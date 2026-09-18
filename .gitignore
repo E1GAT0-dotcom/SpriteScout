@@ -1,0 +1,11 @@
+# Results, the history page, error reports and test runs
+output/
+
+# Built program and PyInstaller's leftovers
+*.exe
+*.spec
+build/
+dist/
+
+__pycache__/
+*.pyc
