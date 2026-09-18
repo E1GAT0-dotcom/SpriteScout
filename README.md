@@ -164,6 +164,12 @@ The tips it gives come from measuring real search results, not guessing:
   says anything is missing.
 - Search stops at 10,000 results. Past that, nobody can reach you by scrolling.
 
+## Helping out
+
+Telling me what it got wrong about your own projects is the most useful thing
+there is. [CONTRIBUTING.md](CONTRIBUTING.md) says what to include, and how to
+run the tests if you want to change the code.
+
 ## Tests
 
 ```
