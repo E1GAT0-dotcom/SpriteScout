@@ -405,7 +405,9 @@ def offline_tests():
 
     locked_log = home / "output" / "search_log.csv"
     locked_log.parent.mkdir(parents=True, exist_ok=True)
-    locked_log.write_text("checked_at" + chr(10), encoding="utf-8")
+    # A current-format log, so saving appends to it: a read-only file blocks that
+    # on every system, where replacing a whole file only needs a writable folder.
+    locked_log.write_text(",".join(scout.LOG_FIELDS) + chr(10), encoding="utf-8-sig")
     os.chmod(locked_log, stat.S_IREAD)
     with Patch(scout, HERE=home, OUTPUT=home / "output"):
         unsaved = gui_error(lambda session: session.log.add(
