@@ -3,7 +3,6 @@ output/
 
 # Built program and PyInstaller's leftovers
 *.exe
-!icon.ico
 *.spec
 build/
 dist/

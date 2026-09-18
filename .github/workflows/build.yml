@@ -5,6 +5,7 @@ name: Build
 # Actions tab to check the tests still pass everywhere.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   release:
     types: [published]
@@ -19,7 +20,19 @@ permissions:
   contents: write
 
 jobs:
+  # Every push gets the quick tests; only tags and releases get the builds.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tests/run_tests.py --offline
+
   build:
+    needs: tests
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
       matrix:

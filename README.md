@@ -2,6 +2,8 @@
 
 # SpriteScout
 
+[![Build](https://github.com/E1GAT0-dotcom/SpriteScout/actions/workflows/build.yml/badge.svg)](https://github.com/E1GAT0-dotcom/SpriteScout/actions/workflows/build.yml)
+
 I kept sharing games that nobody could find, so I made this to see whether my
 Scratch projects and studios actually show up in Scratch search, and what it
 would take to rank higher.
@@ -31,6 +33,44 @@ python spritescout.py
 ```
 
 Type `help` in the window to see every command and flag.
+
+## What it looks like
+
+Checking my own account:
+
+```
+Checking 6 shared projects by E1GAT0_, looking through up to 200 search results each.
+
+  [1/6] Not in search yet    -       The Boring Legal Machine V2
+  [2/6] Easy to find         #1      E1GAT0_'s suggestion box
+  [3/6] Not in search yet    -       Fish Clicker V1
+  [4/6] Easy to find         #1      Ice Drifter v4 FASTER AND COMPRESSED
+  [5/6] Easy to find         #3      Once upon a time there was a lovely princess. But…
+  [6/6] Easy to find         #1      Fishtale - Chapter One
+
+Summary for E1GAT0_
+  Easy to find         4
+  Not in search yet    2
+
+Not in search yet
+  Not in search, but shared in the last 14 days. New projects can take a while
+  to show up, so check again in a few days.
+    The Boring Legal Machine V2  https://scratch.mit.edu/projects/1256400969/
+    Fish Clicker V1  https://scratch.mit.edu/projects/1380420363/
+```
+
+Adding words checks a search people would actually type, and says what would
+help:
+
+```
+  Popular, the default sort: #46
+    First screen: 9,994-142,712 loves, 1-4 word titles, shared since 2016-03-26
+
+  Ways to rank higher
+  - Keep the title short. In Popular, a short title that matches the search
+    often beats projects with far more loves. This one has 6 words, and titles
+    on the first screen have about 2.
+```
 
 ## Using it
 
