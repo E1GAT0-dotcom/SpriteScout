@@ -52,7 +52,7 @@ RELEASES = "https://github.com/E1GAT0-dotcom/SpriteScout/releases"
 LATEST_RELEASE = "https://api.github.com/repos/E1GAT0-dotcom/SpriteScout/releases/latest"
 FROZEN = getattr(sys, "frozen", False)  # running as SpriteScout.exe
 HERE = Path(sys.executable if FROZEN else __file__).resolve().parent
-OUTPUT = HERE / "output"  # where results, the history page and error reports go
+OUTPUT = HERE / "output"  # where results, the history page and error reports go, when it can
 PROGRAM = "SpriteScout.exe" if FROZEN else "python spritescout.py"
 
 API = "https://api.scratch.mit.edu"
@@ -1343,12 +1343,44 @@ def make_history():
           f"{' and opened it' if opened else ''}:\n  {page}")
 
 
+def data_home():
+    """Where this computer expects a program to keep its own files."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "SpriteScout"
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        return Path(base) / "SpriteScout" if base else Path.home() / "SpriteScout"
+    base = os.environ.get("XDG_DATA_HOME")
+    return (Path(base) if base else Path.home() / ".local" / "share") / "spritescout"
+
+
+def inside_mac_app():
+    """True for the Mac app. Its own folder is never the place for results: macOS may be
+    running it from a read-only copy, and anything saved there goes when it's replaced."""
+    return FROZEN and ".app/Contents/" in HERE.as_posix()
+
+
+def writable(folder):
+    """True if files can be saved in a folder, making it if it isn't there yet."""
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        probe = folder / ".spritescout-write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def output_folder(args):
-    """The folder for results: --output, or the output folder next to this program."""
+    """The folder for results: --output, the output folder next to this program, or, when
+    that can't be written to, the folder this computer keeps program files in."""
     if args.output:
         if args.output.exists() and not args.output.is_dir():
             raise CheckError(f"--output needs a folder, but {args.output} is a file.")
         return args.output
+    if inside_mac_app():
+        return data_home()
     # Older versions saved results next to the program, so move them in.
     for name in ("search_log.csv", "search_history.html"):
         old, new = HERE / name, OUTPUT / name
@@ -1359,7 +1391,9 @@ def output_folder(args):
             except OSError:
                 if name == "search_log.csv":
                     return HERE  # couldn't move it (open in Excel?), so keep using it where it is
-    return OUTPUT
+    # A read-only folder, a locked-down drive or a program folder that needs an
+    # administrator: results go to this computer's usual place instead.
+    return OUTPUT if writable(OUTPUT) else data_home()
 
 
 def history_json(rows, source):

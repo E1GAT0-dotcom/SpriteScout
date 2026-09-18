@@ -43,7 +43,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The text version, and the GUI version that opens a page in the browser.
+          # The text version, and the GUI version that opens in a window of its own.
+          # Everything but Windows goes out as a zip: a browser strips the permission
+          # a program needs to run, so a bare download opens as a page of gibberish.
+          # Unzipping puts it back.
           - os: windows-latest
             program: spritescout.py
             built: dist/SpriteScout.exe
@@ -52,12 +55,12 @@ jobs:
           - os: macos-latest
             program: spritescout.py
             built: dist/SpriteScout
-            asset: SpriteScout-mac
+            asset: SpriteScout-mac.zip
             extra: ""
           - os: ubuntu-latest
             program: spritescout.py
             built: dist/SpriteScout
-            asset: SpriteScout-linux
+            asset: SpriteScout-linux.zip
             extra: ""
           - os: windows-latest
             program: spritescout_gui.py
@@ -72,7 +75,7 @@ jobs:
           - os: ubuntu-latest
             program: spritescout_gui.py
             built: dist/SpriteScout
-            asset: SpriteScout-gui-linux
+            asset: SpriteScout-gui-linux.zip
             extra: --add-data "gui.html:." --add-data "icon.png:."
     runs-on: ${{ matrix.os }}
     steps:
@@ -92,13 +95,33 @@ jobs:
 
       - name: Name it after the system it's for
         shell: bash
+        env:
+          BUILT: ${{ matrix.built }}
+          ASSET: ${{ matrix.asset }}
         run: |
-          # A Mac app is a folder, so it travels as a zip that keeps its insides intact.
-          if [[ "${{ matrix.built }}" == *.app ]]; then
-            ditto -c -k --keepParent "${{ matrix.built }}" "${{ matrix.asset }}"
+          if [[ "$ASSET" != *.zip ]]; then
+            mv "$BUILT" "$ASSET"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            # ditto keeps the permission to run, and keeps a .app folder whole.
+            ditto -c -k --keepParent "$BUILT" "$ASSET"
           else
-            mv "${{ matrix.built }}" "${{ matrix.asset }}"
+            (cd "$(dirname "$BUILT")" && zip -q "$GITHUB_WORKSPACE/$ASSET" "$(basename "$BUILT")")
           fi
+
+      - name: Check it still runs once it's unzipped
+        if: endsWith(matrix.asset, '.zip')
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          mkdir unpacked
+          (cd unpacked && unzip -q "../$ASSET")
+          program=$(find unpacked -type f -name SpriteScout -perm -u+x | head -n 1)
+          if [[ -z "$program" ]]; then
+            echo "Unzipped, it can't be run as a program, so it would open as gibberish."
+            exit 1
+          fi
+          echo "Unzips to a program that can run: $program"
 
       - uses: actions/upload-artifact@v4
         with:

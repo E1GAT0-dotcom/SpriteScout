@@ -435,6 +435,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # The page is going. Wait a moment in case another one is still open.
             alive["beat"] = time.monotonic() - GONE_AFTER + 2
             self.send_json({})
+        elif path == "/where":
+            self.send_json({"folder": str(results_folder())})
+        elif path == "/open-folder":
+            try:
+                open_folder(results_folder())
+                self.send_json({"opened": True})
+            except (OSError, scout.CheckError) as error:
+                self.send_json({"error": f"Couldn't open the folder ({error})."})
         elif path == "/window":
             self.send_json({"windowed": showing["in_window"], "browsers": BROWSER_NAMES})
         elif path == "/icon.png" and ICON.exists():
@@ -670,9 +678,27 @@ def start_problems():
     except scout.CheckError as error:
         problems.append(str(error))
     except OSError as error:
+        # output_folder() already fell back to the computer's usual place for program
+        # files, so reaching here means even that is refusing.
         problems.append(f"SpriteScout can't save anything in {folder} ({error.strerror or error}).\n\n"
-                        "Move it somewhere like your Desktop or Downloads folder and try again.")
+                        "That's the folder this computer keeps program files in, so something unusual "
+                        "is stopping it: the disk may be full, or a security program may be blocking "
+                        "SpriteScout. Restarting the computer sometimes clears it.")
     return problems
+
+
+def results_folder():
+    return scout.output_folder(scout.make_parser().parse_args(saved_flags()))
+
+
+def open_folder(folder):
+    """Show a folder in the computer's file manager."""
+    folder.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        os.startfile(folder)  # noqa: the only Windows way to open a folder without a console
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(folder)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def nothing_opened(address):

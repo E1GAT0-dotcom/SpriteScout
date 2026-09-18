@@ -116,6 +116,8 @@
   .quick b { color: var(--brand); }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
   .hint.bad { color: var(--missing); }
+  .where code { color: var(--ink-2); overflow-wrap: anywhere; }
+  .scan.inline { display: inline-block; margin: 0 0 0 8px; padding: 3px 11px; }
   .banner {
     display: block; padding: 11px 20px; text-decoration: none; font-size: 14px; font-weight: 600;
     color: var(--ink); background: color-mix(in srgb, var(--brand) 16%, var(--surface));
@@ -312,6 +314,8 @@
       <button class="go">Save</button>
     </form>
     <p class="hint" id="saved-note">Left empty, each check uses its usual amount. Saved for next time.</p>
+    <p class="hint where">Results are saved in <code id="where"></code>
+      <button class="scan inline" id="open-folder" type="button">Open it</button></p>
   </section>
 
   <div class="bar"><div id="fill"></div></div>
@@ -420,6 +424,19 @@ addEventListener("pagehide", () => {
     navigator.sendBeacon("/bye");
   } catch (whatever) {
     // nothing to do: the program notices on its own a few seconds later
+  }
+});
+
+fetch("/where").then(response => response.json()).catch(() => ({})).then(where => {
+  element("where").textContent = where.folder || "(unknown)";
+});
+
+element("open-folder").addEventListener("click", async () => {
+  try {
+    const opened = await (await fetch("/open-folder")).json();
+    if (opened.error) element("where").textContent += "  — " + opened.error;
+  } catch (whatever) {
+    gone();
   }
 });
 

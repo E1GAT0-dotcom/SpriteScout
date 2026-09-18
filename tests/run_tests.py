@@ -190,6 +190,34 @@ def offline_tests():
           "Couldn't save results" in trouble and "Couldn't save results" in spoken
           and len(log.pending) == 1, (trouble, spoken))
 
+    # The Mac app, run the way macOS runs an app you've just downloaded: from a
+    # random read-only copy. This is the exact path it failed with.
+    translocated = Path("/private/var/folders/2_/ldk15pk135lb1p6y9_7xljvr0000gn/T/AppTranslocation/"
+                        "A61ED390-84F2-4A0A-A016-21C5761E1FCA/d/SpriteScout.app/Contents/MacOS")
+    with Patch(scout.sys, platform="darwin"), Patch(scout, FROZEN=True, HERE=translocated,
+                                                    OUTPUT=translocated / "output"):
+        mac_folder = scout.output_folder(scout.make_parser().parse_args([]))
+    check("the Mac app saves in Application Support, never inside itself",
+          ".app" not in str(mac_folder) and mac_folder.parts[-3:] == ("Library", "Application Support",
+                                                                      "SpriteScout"), mac_folder)
+
+    stuck = folder / "read_only_home"
+    fallback = folder / "usual_place"
+    with Patch(scout, HERE=stuck, OUTPUT=stuck / "output", data_home=lambda: fallback,
+               writable=lambda place: place != stuck / "output"):
+        moved_on = scout.output_folder(scout.make_parser().parse_args([]))
+    check("a folder it can't save in sends results to the computer's usual place instead",
+          moved_on == fallback, moved_on)
+
+    with Patch(scout, HERE=stuck, OUTPUT=stuck / "output", data_home=lambda: fallback):
+        stayed = scout.output_folder(scout.make_parser().parse_args([]))
+    check("results still go next to the program when that works", stayed == stuck / "output", stayed)
+
+    for system, ending in (("win32", "SpriteScout"), ("linux", "spritescout")):
+        with Patch(scout.sys, platform=system):
+            place = scout.data_home()
+        check(f"knows where {system} keeps program files", place.name == ending, place)
+
     home = folder / "old_home"
     home.mkdir(exist_ok=True)
     (home / "search_log.csv").write_text("checked_at\n", encoding="utf-8")
@@ -589,12 +617,16 @@ def offline_tests():
         refused = json.loads(urllib.request.urlopen(address + "save?depth=lots", timeout=10).read())
         cleared = json.loads(urllib.request.urlopen(address + "save?depth=", timeout=10).read())
         stopping = json.loads(urllib.request.urlopen(address + "stop", timeout=10).read())
+        where = json.loads(urllib.request.urlopen(address + "where", timeout=10).read())
         server.shutdown()
     gui.stopping.clear()
     check("the GUI version serves its page", f">{scout.VERSION}<" in page and "SpriteScout" in page
           and "__VERSION__" not in page and icon.status == 200, page[:200])
     check("the page says what happened instead of going quiet when the program is closed",
           "isn't running any more" in page and "Still finishing the last check" in page)
+    check("the GUI version says where it saves results, with a way to open the folder",
+          where.get("folder") == str(home / "output") and 'id="open-folder"' in page
+          and '"/open-folder"' in page, where)
     check("the page says so when it's a tab, and which browsers would give it a window",
           '"/window"' in page and "tabnote" in page and "dismiss" in page
           and "sendBeacon" in page and '"/alive"' in page)

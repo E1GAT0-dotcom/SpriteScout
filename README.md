@@ -23,8 +23,8 @@ do the same checks. Pick one:
 | System | GUI version | Text version |
 |---|---|---|
 | Windows | `SpriteScout-gui-windows.exe` | `SpriteScout-windows.exe` |
-| Mac (Apple Silicon) | `SpriteScout-gui-mac.zip` | `SpriteScout-mac` |
-| Linux | `SpriteScout-gui-linux` | `SpriteScout-linux` |
+| Mac (Apple Silicon) | `SpriteScout-gui-mac.zip` | `SpriteScout-mac.zip` |
+| Linux | `SpriteScout-gui-linux.zip` | `SpriteScout-linux.zip` |
 
 The **GUI version** opens in a window of its own, with tabs and buttons and no
 typing of commands. Close the window and it quits. Nothing is uploaded: the page
@@ -39,8 +39,14 @@ Neither is signed, so systems get suspicious about them:
 - Windows sometimes blocks or warns about unsigned programs. If that happens,
   download the source and double-click `SpriteScout.bat`, which runs the same
   tool with Python.
-- Mac: unzip it, then right-click the app the first time and choose Open.
-- Linux: `chmod +x` it, then run it.
+- Mac: unzip it. Drag the GUI app into Applications; the text version is a file
+  called `SpriteScout` that opens in Terminal. Either way, right-click it the
+  first time and choose Open.
+- Linux: unzip it and run `./SpriteScout`.
+
+The Mac and Linux downloads are zips on purpose. Downloading a program strips
+its permission to run, so a bare file opens as a page of gibberish instead;
+unzipping gives it back.
 
 Any system with Python 3.8 or newer can skip the downloads:
 
@@ -176,8 +182,15 @@ There's more, but only if you ask for it:
 | `--history` | A page with charts of your ranks over time |
 | `--scan` | Keeps looking past where a check normally stops (press q to stop) |
 
-Results go in the `output` folder: `search_log.csv` keeps every check, so later
-checks tell you what moved, and `search_history.html` is the chart page.
+Results go in the `output` folder next to the program: `search_log.csv` keeps
+every check, so later checks tell you what moved, and `search_history.html` is
+the chart page.
+
+The Mac app keeps them in `~/Library/Application Support/SpriteScout` instead,
+because an app is never allowed to write inside itself. The same folder (or
+`%LOCALAPPDATA%\SpriteScout` on Windows) is where results go whenever the folder
+next to the program can't be written to. The GUI version's Settings tab says
+where they are and has a button to open the folder.
 
 ## What I found out about Scratch search
 
