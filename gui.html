@@ -55,18 +55,30 @@
   header img { height: 34px; }
   header .name { font-weight: 650; letter-spacing: 0.2px; }
   header .version { color: var(--muted); font-size: 13px; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
-  .ask { display: flex; gap: 10px; }
+  main { max-width: 860px; margin: 0 auto; padding: 22px 20px 64px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+  .tab {
+    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
+    background: transparent; color: var(--ink-2); font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .tab.on { background: var(--raised); color: var(--ink); border-color: transparent; }
+  form { display: flex; gap: 10px; flex-wrap: wrap; }
   input[type="text"] {
-    flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+    flex: 1; min-width: 220px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
     background: var(--surface); color: var(--ink); font: inherit;
   }
   input[type="text"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: transparent; }
-  button {
+  button.go {
     padding: 12px 20px; border: 0; border-radius: 10px; font: inherit; font-weight: 650;
     background: var(--brand); color: #06120b; cursor: pointer;
   }
-  button:disabled { opacity: 0.55; cursor: default; }
+  button.go:disabled { opacity: 0.55; cursor: default; }
+  .quick {
+    margin-top: 12px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 10px;
+    background: transparent; color: var(--ink); font: inherit; cursor: pointer; text-align: left;
+  }
+  .quick:hover { background: var(--raised); }
+  .quick b { color: var(--brand); }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
   .bar { height: 4px; border-radius: 4px; background: var(--raised); margin: 22px 0 6px; overflow: hidden; }
   .bar div { height: 100%; width: 0; background: var(--brand); transition: width 0.25s ease; }
@@ -80,7 +92,10 @@
   .easy { color: var(--easy); } .buried { color: var(--buried); } .new { color: var(--new); }
   .unknown, .capped { color: var(--unknown); } .missing { color: var(--missing); }
   .unsearchable { color: var(--unsearchable); }
-  .rows { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+  .rows, .detail {
+    margin-top: 10px; border: 1px solid var(--line); border-radius: 14px;
+    overflow: hidden; background: var(--surface);
+  }
   .row {
     display: grid; grid-template-columns: 150px 64px 1fr; gap: 14px; align-items: center;
     padding: 13px 16px; border-top: 1px solid var(--line);
@@ -94,7 +109,22 @@
   .sub { color: var(--muted); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
   .why { grid-column: 1 / -1; color: var(--ink-2); font-size: 13px; background: var(--raised);
          border-radius: 10px; padding: 10px 12px; margin-top: 2px; }
-  .problem { border: 1px solid var(--missing); color: var(--missing); border-radius: 12px; padding: 12px 14px; margin-top: 18px; }
+  .detail { padding: 16px; }
+  .detail h2 { margin: 0; font-size: 17px; }
+  .detail h2 a { color: var(--ink); text-decoration: none; }
+  .detail h2 a:hover { text-decoration: underline; }
+  .detail .about { color: var(--muted); font-size: 13px; margin: 4px 0 14px; }
+  .sort { border-top: 1px solid var(--line); padding: 12px 0; }
+  .sort .line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sort .name { font-weight: 650; min-width: 84px; }
+  .sort .screen { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .tips { margin: 14px 0 0; padding: 14px 16px; background: var(--raised); border-radius: 12px; }
+  .tips h3 { margin: 0 0 8px; font-size: 14px; }
+  .tips ul { margin: 0; padding-left: 18px; }
+  .tips li { margin-bottom: 8px; color: var(--ink-2); font-size: 14px; }
+  .tips li:last-child { margin-bottom: 0; }
+  .problem { border: 1px solid var(--missing); color: var(--missing); border-radius: 12px;
+             padding: 12px 14px; margin-top: 18px; }
   @media (max-width: 620px) {
     .row { grid-template-columns: 1fr; }
     .rank { text-align: left; }
@@ -108,47 +138,88 @@
   <span class="version">__VERSION__</span>
 </header>
 <main>
-  <form class="ask" id="ask">
-    <input type="text" id="what" placeholder="Your username, or a project or studio link" autofocus spellcheck="false">
-    <button id="go">Check</button>
-  </form>
-  <p class="hint">Checks whether each project and studio comes up in Scratch search, and how far down.</p>
+  <nav class="tabs">
+    <button class="tab on" data-panel="titles">Check</button>
+    <button class="tab" data-panel="words">Search words</button>
+  </nav>
+
+  <section id="panel-titles">
+    <form id="ask-titles">
+      <input type="text" id="what" placeholder="Your username, or a project or studio link" autofocus spellcheck="false">
+      <button class="go">Check</button>
+    </form>
+    <p class="hint">Checks whether each project and studio comes up in Scratch search, and how far down.</p>
+    <button class="quick" id="quick" hidden></button>
+  </section>
+
+  <section id="panel-words" hidden>
+    <form id="ask-words">
+      <input type="text" id="words-what" placeholder="A project or studio link" spellcheck="false">
+      <input type="text" id="words-words" placeholder="Words people would search, like pizza tycoon" spellcheck="false">
+      <button class="go">Check</button>
+    </form>
+    <p class="hint">Shows where it ranks in Popular and Trending, and what would help.</p>
+  </section>
 
   <div class="bar"><div id="fill"></div></div>
   <div class="status" id="status"></div>
   <div class="counts" id="counts"></div>
   <div class="rows" id="rows" hidden></div>
+  <div class="detail" id="detail" hidden></div>
   <div class="problem" id="problem" hidden></div>
 </main>
 <script>
-const ask = document.getElementById("ask");
-const what = document.getElementById("what");
-const go = document.getElementById("go");
-const fill = document.getElementById("fill");
-const statusLine = document.getElementById("status");
-const counts = document.getElementById("counts");
-const rows = document.getElementById("rows");
-const problem = document.getElementById("problem");
-let polling = null;
-let shown = 0;
+const element = id => document.getElementById(id);
+const fill = element("fill"), statusLine = element("status"), counts = element("counts");
+const rows = element("rows"), detail = element("detail"), problem = element("problem");
+let polling = null, shown = 0;
 
-ask.addEventListener("submit", async event => {
+for (const tab of document.querySelectorAll(".tab")) {
+  tab.addEventListener("click", () => {
+    for (const other of document.querySelectorAll(".tab")) other.classList.toggle("on", other === tab);
+    element("panel-titles").hidden = tab.dataset.panel !== "titles";
+    element("panel-words").hidden = tab.dataset.panel !== "words";
+  });
+}
+
+element("ask-titles").addEventListener("submit", event => {
   event.preventDefault();
-  const text = what.value.trim();
-  if (!text) return;
+  const what = element("what").value.trim();
+  if (what) begin("/check?what=" + encodeURIComponent(what));
+});
+
+element("ask-words").addEventListener("submit", event => {
+  event.preventDefault();
+  const what = element("words-what").value.trim();
+  const words = element("words-words").value.trim();
+  if (what && words) begin(`/words?what=${encodeURIComponent(what)}&words=${encodeURIComponent(words)}`);
+});
+
+fetch("/settings").then(response => response.json()).then(saved => {
+  if (!saved.username) return;
+  const quick = element("quick");
+  quick.replaceChildren(document.createTextNode("Check my projects: "), strong(saved.username));
+  quick.hidden = false;
+  quick.addEventListener("click", () => {
+    element("what").value = saved.username;
+    element("ask-titles").requestSubmit();
+  });
+});
+
+async function begin(url) {
   rows.replaceChildren();
-  rows.hidden = true;
+  detail.replaceChildren();
   counts.replaceChildren();
-  problem.hidden = true;
+  rows.hidden = detail.hidden = problem.hidden = true;
   shown = 0;
   fill.style.width = "0";
   statusLine.textContent = "Asking Scratch…";
-  go.disabled = true;
-  await fetch("/check?what=" + encodeURIComponent(text));
+  for (const button of document.querySelectorAll("button.go")) button.disabled = true;
+  await fetch(url);
   clearInterval(polling);
   polling = setInterval(poll, 700);
   poll();
-});
+}
 
 async function poll() {
   const job = await (await fetch("/progress")).json();
@@ -162,69 +233,119 @@ async function poll() {
       : `Checked ${job.heading}`;
     fill.style.width = `${(job.checked / job.total) * 100}%`;
   }
-  for (const item of job.items.slice(shown)) addRow(item);
-  shown = job.items.length;
-  if (shown) rows.hidden = false;
-  summarise(job.items);
+  if (job.kind === "titles") {
+    for (const item of job.items.slice(shown)) addRow(item);
+    shown = job.items.length;
+    if (shown) rows.hidden = false;
+    summarise(job.items);
+  } else if (job.detail) {
+    showWords(job.detail);
+    detail.hidden = false;
+  }
   if (job.state !== "running") {
     if (job.total) fill.style.width = "100%";
     clearInterval(polling);
-    go.disabled = false;
+    for (const button of document.querySelectorAll("button.go")) button.disabled = false;
     if (!job.total && !job.error) statusLine.textContent = "Nothing to check.";
   }
 }
 
 function addRow(item) {
-  const row = document.createElement("div");
-  row.className = "row";
+  const row = make("div", "row");
+  row.append(chipFor(item.status, item.label));
 
-  const chip = document.createElement("span");
-  chip.className = `chip ${item.status}`;
-  chip.append(dot(), text(item.label));
-  row.append(chip);
-
-  const rank = document.createElement("div");
-  rank.className = "rank";
+  const rank = make("div", "rank");
   rank.textContent = item.rank ? `#${item.rank.toLocaleString()}` : "—";
   row.append(rank);
 
-  const title = document.createElement("div");
-  title.className = "title";
-  const link = document.createElement("a");
-  link.href = item.url;
-  link.target = "_blank";
-  link.rel = "noreferrer";
-  link.textContent = item.title;
-  const sub = document.createElement("div");
-  sub.className = "sub";
-  sub.textContent = [item.kind, item.count, item.change].filter(Boolean).join(" · ");
-  title.append(link, sub);
+  const title = make("div", "title");
+  title.append(link(item.url, item.title), sub([item.kind, item.count, item.change]));
   row.append(title);
 
   if (item.status !== "easy") {
-    const why = document.createElement("div");
-    why.className = "why";
+    const why = make("div", "why");
     why.textContent = item.advice;
     row.append(why);
   }
   rows.append(row);
 }
 
+function showWords(found) {
+  detail.replaceChildren();
+  const heading = make("h2");
+  heading.append(link(found.url, found.title));
+  const about = make("div", "about");
+  about.textContent = `${found.kind} · ${found.about} · ${found.matches} match "${found.query}"`;
+  detail.append(heading, about);
+
+  for (const sort of found.sorts) {
+    const block = make("div", "sort");
+    const line = make("div", "line");
+    const name = make("span", "name");
+    name.textContent = sort.sort;
+    line.append(name, chipFor(sort.first ? "easy" : sort.rank ? "buried" : "missing",
+                              sort.result + (sort.first ? " · first screen" : "")));
+    if (sort.change) line.append(sub([sort.change]));
+    const screen = make("div", "screen");
+    screen.textContent = `First screen: ${sort.screen}`;
+    block.append(line, screen);
+    detail.append(block);
+  }
+
+  if (found.tips.length) {
+    const tips = make("div", "tips");
+    const title = make("h3");
+    title.textContent = "Ways to rank higher";
+    const list = make("ul");
+    for (const tip of found.tips) {
+      const item = make("li");
+      item.textContent = tip;
+      list.append(item);
+    }
+    tips.append(title, list);
+    detail.append(tips);
+  }
+}
+
 function summarise(items) {
   const tally = new Map();
   for (const item of items) tally.set(item.label, [(tally.get(item.label)?.[0] || 0) + 1, item.status]);
   counts.replaceChildren();
-  for (const [label, [count, status]] of tally) {
-    const chip = document.createElement("span");
-    chip.className = `chip ${status}`;
-    chip.append(dot(), text(`${label}: ${count}`));
-    counts.append(chip);
-  }
+  for (const [label, [count, status]] of tally) counts.append(chipFor(status, `${label}: ${count}`));
 }
 
-const dot = () => Object.assign(document.createElement("span"), {className: "dot"});
-const text = value => document.createTextNode(value);
+function chipFor(status, label) {
+  const chip = make("span", `chip ${status}`);
+  chip.append(make("span", "dot"), document.createTextNode(label));
+  return chip;
+}
 
+function link(url, text) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
+  anchor.textContent = text;
+  return anchor;
+}
+
+function sub(parts) {
+  const node = make("div", "sub");
+  node.textContent = parts.filter(Boolean).join(" · ");
+  return node;
+}
+
+function strong(text) {
+  const node = document.createElement("b");
+  node.textContent = text;
+  return node;
+}
+
+function make(tag, className) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  return node;
+}
 </script>
 </body>
 </html>

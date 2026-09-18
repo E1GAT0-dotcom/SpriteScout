@@ -309,10 +309,24 @@ def offline_tests():
 
     lookup = scout.Lookup("projects", {"id": 5, "title": "Demo", "stats": {"loves": 1}}, "Demo")
     lookup.rank = 3
-    row = gui.describe("projects", lookup.item, lookup, "easy", "no change since 2026-09-01")
+    row = gui.row("projects", lookup.item, lookup, "easy", "no change since 2026-09-01")
     check("the window version describes results the same way the console does",
           row["label"] == "Easy to find" and row["rank"] == 3 and row["count"] == "1 love"
           and row["url"].endswith("/projects/5/") and row["change"] == "", row)
+
+    home = RUN / "offline" / "window"
+    with Patch(scout, HERE=home, OUTPUT=home / "output"):
+        gui.remember({"username": "demo"})
+        check("the window version remembers your username", gui.remembered().get("username") == "demo",
+              gui.remembered())
+
+    gui.start("words", gui.check_words, "griffpatch", "platformer")
+    for _ in range(50):
+        if gui.job["state"] == "done":
+            break
+        time.sleep(0.1)
+    check("the window version explains search words without a project",
+          "one project or studio" in gui.job["error"], gui.job["error"])
 
     with socketserver.ThreadingTCPServer(("127.0.0.1", 0), gui.Handler) as server:
         threading.Thread(target=server.serve_forever, daemon=True).start()
