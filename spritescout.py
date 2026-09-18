@@ -47,7 +47,7 @@ try:
 except ImportError:
     msvcrt = None
 
-VERSION = "1.6"
+VERSION = "1.7"
 FROZEN = getattr(sys, "frozen", False)  # running as SpriteScout.exe
 HERE = Path(sys.executable if FROZEN else __file__).resolve().parent
 OUTPUT = HERE / "output"  # where results, the history page and error reports go

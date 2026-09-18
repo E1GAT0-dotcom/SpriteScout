@@ -11,13 +11,18 @@ Not affiliated with Scratch, the Scratch Foundation or MIT.
 
 ## Download
 
-Get `SpriteScout.exe` from the
-[releases page](https://github.com/E1GAT0-dotcom/SpriteScout/releases) and
-double-click it. A window opens with the list of commands.
+The [releases page](https://github.com/E1GAT0-dotcom/SpriteScout/releases) has a
+download for each system:
 
-The .exe isn't signed, so some PCs block it or warn about it. If that happens,
-download the files and double-click `SpriteScout.bat`, which runs the same tool
-with Python. You can also run it directly with Python 3.8 or newer:
+- Windows: `SpriteScout-windows.exe`, double-click it
+- Mac (Apple Silicon): `SpriteScout-mac`, right-click it the first time and
+  choose Open, since it isn't signed
+- Linux: `SpriteScout-linux`, `chmod +x` it and run it from a terminal
+
+On Windows the file isn't signed either, so some PCs block it or warn about it.
+If that happens, download the source and double-click `SpriteScout.bat`, which
+runs the same tool with Python. Any system with Python 3.8 or newer can skip
+the download entirely:
 
 ```
 python spritescout.py
