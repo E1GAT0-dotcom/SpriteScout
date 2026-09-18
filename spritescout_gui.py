@@ -249,6 +249,32 @@ def try_titles(session, text, titles):
                                             "verdict": verdict})
 
 
+def suggest_titles(session, text, words):
+    """Titles one project or studio could reach the first screen with."""
+    kind, item = one_item(text, "Suggesting titles works with one project or studio. Paste its link above.")
+    hints = words.split()
+    with job_lock:
+        job.update(total=scout.MOST_IDEAS,
+                   heading=f"titles for \"{scout.short_title(item['title'], 40)}\"")
+
+    def step(done, total):
+        job.update(checked=done, total=total)
+
+    winners, empty, now = scout.better_titles(kind, item, hints, should_stop=stopping.is_set,
+                                              progress=step)
+    with job_lock:
+        job["stopped"] = stopping.is_set()
+        job["detail"] = {
+            "title": scout.tidy(item["title"]), "url": scout.item_url(kind, item),
+            "kind": scout.NOUNS[kind], "about": scout.describe_item(kind, item),
+            "now": {"title": now["title"], "line": scout.idea_line(kind, item, now), "wins": now["wins"]},
+            "winners": [{"title": idea["title"], "line": scout.idea_line(kind, item, idea)}
+                        for idea in winners],
+            "empty": empty[:5],
+            "beaten": now["beaten"],
+        }
+
+
 def find_studios(session, words):
     """Studios about some words that anyone can add projects to."""
     query = " ".join(words.split())
@@ -398,6 +424,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                     bool(asked.get("contents", [""])[0])))
         elif path == "/words":
             self.send_started(start("words", check_words, asked.get("what", [""])[0].strip(),
+                                    asked.get("words", [""])[0]))
+        elif path == "/suggest":
+            self.send_started(start("suggest", suggest_titles, asked.get("what", [""])[0].strip(),
                                     asked.get("words", [""])[0]))
         elif path == "/titles":
             self.send_started(start("titles-test", try_titles, asked.get("what", [""])[0].strip(),

@@ -221,10 +221,12 @@
   <section id="panel-titletest" hidden>
     <form id="ask-titletest">
       <input type="text" id="titletest-what" placeholder="A project or studio link" spellcheck="false">
-      <button class="go">Try them</button>
-      <textarea id="titletest-titles" rows="3" placeholder="Titles you're thinking about, one per line"></textarea>
+      <button class="go" id="suggest-go" formnovalidate>Suggest titles</button>
+      <button class="go" id="titletest-go">Try mine</button>
+      <textarea id="titletest-titles" rows="3" placeholder="Titles you're thinking about, one per line &#10;(or a word or two it's about, to steer the suggestions)"></textarea>
     </form>
-    <p class="hint">Says how crowded each title's search is, and whether you'd make the first screen.</p>
+    <p class="hint">Suggest titles finds names it could reach the first screen with. Try mine says how
+      crowded the ones you type already are.</p>
   </section>
 
   <section id="panel-studios" hidden>
@@ -318,11 +320,19 @@ element("ask-words").addEventListener("submit", event => {
   if (what && words) begin(`/words?what=${encodeURIComponent(what)}&words=${encodeURIComponent(words)}`);
 });
 
+let suggesting = false;
+element("suggest-go").addEventListener("click", () => { suggesting = true; });
+element("titletest-go").addEventListener("click", () => { suggesting = false; });
+
 element("ask-titletest").addEventListener("submit", event => {
   event.preventDefault();
-  const what = element("titletest-what").value.trim();
-  const titles = element("titletest-titles").value;
-  begin(`/titles?what=${encodeURIComponent(what)}&titles=${encodeURIComponent(titles)}`);
+  const what = encodeURIComponent(element("titletest-what").value.trim());
+  const typed = element("titletest-titles").value;
+  // For suggestions the box means "what it's about", so take a few words from the first line.
+  const hint = typed.split(/\r?\n/)[0].trim().split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
+  begin(suggesting
+    ? `/suggest?what=${what}&words=${encodeURIComponent(hint)}`
+    : `/titles?what=${what}&titles=${encodeURIComponent(typed)}`);
 });
 
 element("ask-studios").addEventListener("submit", event => {
@@ -451,7 +461,8 @@ async function poll() {
     showRows(job.items);
     summarise(job.items);
   } else if (job.detail) {
-    const show = {words: showWords, "titles-test": showTitles, studios: showStudios, searches: showSearches};
+    const show = {words: showWords, "titles-test": showTitles, studios: showStudios,
+                  searches: showSearches, suggest: showSuggested};
     show[job.kind](job.detail);
     detail.hidden = false;
   }
@@ -543,6 +554,44 @@ function showWords(found) {
     tips.append(title, list);
     detail.append(tips);
   }
+}
+
+function showSuggested(found) {
+  detail.replaceChildren(heading(found), about(`${found.kind} · ${found.about}`));
+  detail.append(idea(`Now: "${found.now.title}"`, found.now.line,
+                     found.now.wins ? "easy" : "buried"));
+  if (found.winners.length) {
+    detail.append(note("Titles it could be on the first screen for, busiest search first."));
+    for (const [place, option] of found.winners.entries()) {
+      detail.append(idea(`${place + 1}. "${option.title}"`, option.line, "easy"));
+    }
+  } else {
+    detail.append(note("None of the titles tried would reach the first screen. A few more loves, or a "
+                       + "word nothing else uses, is what moves it."));
+  }
+  for (const title of found.empty) {
+    detail.append(idea(`"${title}"`, "Nothing matches it yet, so you would be the only result — which "
+                       + "helps only if somebody searches for it.", "new"));
+  }
+  if (found.beaten) {
+    detail.append(note(`The other ${found.beaten} tried would stay off the first screen. No single `
+                       + `common word is within reach for anybody: even "idle", the cheapest, needs `
+                       + "128 loves."));
+  }
+}
+
+function idea(name, line, status) {
+  const block = make("div", "sort");
+  const row = make("div", "line");
+  const title = make("span", "name");
+  title.textContent = name;
+  title.style.minWidth = "0";
+  row.append(chipFor(status, status === "easy" ? "first screen" : status === "new" ? "only result" : "below it"),
+             title);
+  const why = make("div", "screen");
+  why.textContent = line;
+  block.append(row, why);
+  return block;
 }
 
 function showTitles(found) {

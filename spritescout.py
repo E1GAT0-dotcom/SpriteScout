@@ -154,6 +154,8 @@ WINDOW_COMMANDS = [
 OPTIONS = [
     ("Extra features", ["--find-studios"], {"nargs": "+", "metavar": "WORDS"},
      "Active studios about WORDS that anyone can add to"),
+    ("Extra features", ["--suggest"], {"action": "store_true"},
+     "After a project or studio: titles it could be found by"),
     ("Extra features", ["--titles"], {"nargs": "+", "metavar": '"TITLE"'},
      "After a project or studio: compare new titles"),
     ("Extra features", ["--find-words"], {"action": "store_true"},
@@ -1145,6 +1147,176 @@ def search_word_ideas(title, extra_words=()):
     return list(dict.fromkeys(idea for idea in ideas if re.search(r"\w", idea)))[:15]
 
 
+# Suggesting titles people could actually find
+
+# Measured against real search: every one of these fills the first page of
+# results on its own, so they are words Scratchers use and search. None of them
+# is winnable alone, though -- the cheapest, "idle", still needs 128 loves to
+# reach the first screen -- so suggestions pair them with words of your own.
+GENRE_WORDS = [
+    "game", "simulator", "clicker", "tycoon", "obby", "idle", "engine", "tutorial", "generator",
+    "maker", "escape", "quiz", "puzzle", "adventure", "challenge", "battle", "race", "racing",
+    "rush", "story", "music", "art", "animation", "pixel", "mobile", "multiplayer", "demo",
+    "remake", "deluxe", "test", "level", "boss", "pet", "food", "car", "fishing", "drift",
+]
+PLAIN_GENRES = ["game", "simulator", "maker", "challenge"]  # fit most things, when there's nothing to go on
+MOST_IDEAS = 14  # each one costs a search, so keep it to about half a minute
+
+
+def keep_words(item):
+    """The words in a title worth keeping: no version numbers, no filler."""
+    words = [word for word in re.findall(r"[^\W_]+", tidy(item["title"]))
+             if len(word) > 2 and not word.isdigit() and not re.fullmatch(r"v\d+", word.lower())
+             and word.lower() not in STOP_WORDS]
+    # Capitalise the plain ones so suggestions read like titles, but leave MAGIE and iPhone alone.
+    return [word.capitalize() if word == word.lower() else word for word in words][:4]
+
+
+def about_words(item):
+    """The words written about it, which search never looks at."""
+    return words_in(" ".join(str(item.get(field) or "") for field in ("description", "instructions")))
+
+
+def joined_words(item):
+    """Words a title splits that people often type as one, like "sand box" into "sandbox"."""
+    keep = keep_words(item)
+    return [keep[number] + keep[number + 1].lower() for number in range(len(keep) - 1)
+            if len(keep[number]) <= 7 and len(keep[number + 1]) <= 7][:2]
+
+
+def title_ideas(item, extra_words=()):
+    """Titles worth measuring: the words it already has, crossed with words people search.
+
+    Genre words only come up when the description already uses them, so a quiz
+    doesn't get suggested to a racing game.
+    """
+    keep = keep_words(item)
+    if not keep:
+        return []
+    said = about_words(item)
+    genres = [" ".join(extra_words)] if extra_words else []
+    genres += [word for word in GENRE_WORDS if has_word(said, word)]
+    genres += [word for word in PLAIN_GENRES if not has_word(said, word)]
+    ideas = list(joined_words(item))
+    if len(keep) > 2:  # the title's own words are always worth trying on their own
+        ideas += [" ".join(pair) for pair in zip(keep, keep[1:])]
+    for genre in genres[:4]:
+        ideas += [f"{word} {genre.title()}" for word in joined_words(item)[:1] + keep[:2]]
+        if len(keep) > 1:
+            ideas.append(" ".join(keep[:3]) + " " + genre.title())
+    current = tidy(item["title"]).lower()
+    seen, wanted = {current}, []
+    for idea in ideas:
+        if idea.lower() not in seen:
+            seen.add(idea.lower())
+            wanted.append(idea)
+    return wanted[:MOST_IDEAS]
+
+
+def first_screen_chance(kind, item, title):
+    """What a title is up against: (results on page one, the lowest stat there, would it get on)."""
+    page = search_page(kind, title, title_sort(), 0, PAGE_SIZE)
+    stats = [stat_of(kind, other) for other in page[: settings.first_screen] if other["id"] != item["id"]]
+    lowest = min(stats) if stats else 0
+    return len(page), lowest, len(page) < settings.first_screen or stat_of(kind, item) >= lowest
+
+
+def better_titles(kind, item, extra_words=(), should_stop=None, progress=None):
+    """Titles it could reach the first screen with, busiest search first.
+
+    Returns (titles it would get on the first screen for, titles nothing matches
+    yet, how the title it has now does).
+    """
+    ideas, invented = title_ideas(item, extra_words), set(joined_words(item))
+    if not ideas:
+        raise CheckError(f"The title of {describe(kind, item)} has no words to build on. "
+                         "Add some words after it to start from those instead.")
+    seen, lowest, wins = first_screen_chance(kind, item, tidy(item["title"]))
+    now = {"title": tidy(item["title"]), "crowd": seen, "lowest": lowest, "wins": wins}
+    winners, empty, tried = [], [], 0
+    for number, title in enumerate(ideas, 1):
+        if should_stop and should_stop():
+            break
+        if progress:
+            progress(number, len(ideas))
+        tried += 1
+        seen, lowest, wins = first_screen_chance(kind, item, title)
+        if seen == 0:
+            # A made-up word nobody searches is no use as "you would be the only result".
+            if title not in invented:
+                empty.append(title)
+        elif wins:
+            winners.append({"title": title, "crowd": seen, "lowest": lowest, "wins": True})
+    now["tried"] = tried
+    now["beaten"] = tried - len(winners) - len(empty)
+    # The busiest search it can still win is the one most people are typing.
+    winners.sort(key=lambda idea: (-idea["lowest"], -idea["crowd"], word_count(idea["title"])))
+    return winners, empty, now
+
+
+def crowd_text(kind, idea):
+    """How crowded a title's search is, in words."""
+    noun, stat = NOUNS[kind], "love" if kind == "projects" else "follower"
+    crowd = f"{idea['crowd']}+ {noun}s match" if idea["crowd"] >= PAGE_SIZE else matching(idea["crowd"], noun)
+    if idea["crowd"] == 0:
+        return f"nothing matches it yet, so you would be the only result"
+    if idea["crowd"] < settings.first_screen:
+        return f"{crowd}, too few to fill the first screen"
+    if idea["lowest"] == 0:
+        return f"{crowd}, but some on the first screen have no {stat}s at all"
+    return f"{crowd}, and the first screen starts at {plural(idea['lowest'], stat)}"
+
+
+def idea_line(kind, item, idea):
+    """The line under a suggested title: what it would be up against."""
+    return crowd_text(kind, idea).capitalize() + "."
+
+
+def suggest_titles(kind, item, words):
+    """--suggest: titles this project or studio could reach the first screen with."""
+    noun, stat = NOUNS[kind], "love" if kind == "projects" else "follower"
+    mine = stat_of(kind, item)
+    print(f"\nLooking for titles {describe(kind, item)} could reach the first screen with.")
+    print(f"It has {plural(mine, stat)}, so it needs a search whose first screen starts at or below that.")
+    print(f"Trying up to {MOST_IDEAS} of them, so this takes a minute.")
+    winners, empty, now = better_titles(kind, item, words, progress=show_idea_progress)
+    end_progress()
+
+    print(f"\n  Now: \"{short_title(now['title'], 56)}\"")
+    print(wrap(("On the first screen already. " if now["wins"] else "Not on the first screen. ")
+               + idea_line(kind, item, now), "    "))
+
+    if winners:
+        print("\n  Titles it could be on the first screen for, busiest search first:")
+        for number, idea in enumerate(winners, 1):
+            print(f"\n  {number}. \"{short_title(idea['title'], 56)}\"")
+            print(wrap(idea_line(kind, item, idea), "     "))
+    else:
+        print(f"\n  None of the {plural(now['tried'], 'title')} tried would reach the first screen "
+              f"with {plural(mine, stat)}.")
+        print(wrap("Every search it fits into is held by things with far more than that. A few more "
+                   f"{stat}s, or a word nothing else uses, is what moves it.", "    "))
+
+    if empty:
+        print("\n  Nothing matches these at all, so you would be the only result:")
+        for title in empty[:5]:
+            print(f"     \"{short_title(title, 56)}\"")
+        print(wrap("Being the only result only helps if somebody searches for it, so pick one that "
+                   f"describes what the {noun} actually is.", "    "))
+
+    if winners and now["beaten"]:
+        print(f"\n  The other {plural(now['beaten'], 'title')} tried would stay off the first screen.")
+    print()
+    print(wrap("No single common word is within reach for anybody: even \"idle\", the cheapest, needs "
+               "128 loves. Pairing a word of your own with one people search is what works.", "  "))
+    print(wrap("After renaming, check again in a few days. Search takes a while to catch up.", "  "))
+
+
+def show_idea_progress(done, total):
+    if sys.stdout.isatty():
+        print(f"\r  Trying title {done} of {total}", end="", flush=True)
+
+
 def make_history():
     """--history: turn the log into a page of rank-over-time charts, and open it."""
     folder = output_folder(settings)
@@ -1784,9 +1956,9 @@ def run(session, args):
         find_studios(args.find_studios)
     if args.what:
         run_check(session, args)
-    elif args.titles or args.find_words or args.contents:
-        raise CheckError("--titles, --find-words and --contents go after a project or studio, "
-                         "like: 123456789 --find-words")
+    elif args.titles or args.find_words or args.contents or args.suggest:
+        raise CheckError("--suggest, --titles, --find-words and --contents go after a project or "
+                         "studio, like: 123456789 --find-words")
     return bool(args.what or args.history or args.find_studios)
 
 
@@ -1796,7 +1968,7 @@ def run_check(session, args):
         raise CheckError(f"I can't tell what \"{args.what[0]}\" is. Type a username, a project link or ID, "
                          "or \"studio\" and a studio ID. Type help for examples.")
     kind, value, words = parsed
-    if kind == "user" and (words or args.titles or args.find_words):
+    if kind == "user" and (words or args.titles or args.find_words or args.suggest):
         raise CheckError(f"\"{value}\" looks like a username. Search words, --titles and --find-words go "
                          "after a project or studio, like: 123456789 pizza tycoon")
     if args.contents and kind != "studio":
@@ -1824,7 +1996,7 @@ def check_target(session, kind, value, words, args):
         item = get_json(f"/projects/{value}") if kind != "user" else None
         item_kind = "projects"
         if not item:
-            if kind == "project" or words or args.titles or args.find_words:
+            if kind == "project" or words or args.titles or args.find_words or args.suggest:
                 raise CheckError(f"There's no shared project with ID {value}. Check the number in the project's "
                                  "link. Unshared projects can't be checked, because they can't show up in search.")
             user = get_json(f"/users/{value}")
@@ -1837,11 +2009,13 @@ def check_target(session, kind, value, words, args):
 
     if args.contents:
         check_contents(session, item, clamp_depth(args.depth or USER_DEPTH))
+    if args.suggest:
+        suggest_titles(item_kind, item, words)
     if args.titles:
         test_titles(item_kind, item, args.titles)
     if args.find_words:
         find_words(session, item_kind, item, words, clamp_depth(args.depth or WORDS_DEPTH))
-    if not (args.contents or args.titles or args.find_words):
+    if not (args.contents or args.titles or args.find_words or args.suggest):
         depth = clamp_depth(args.depth or SINGLE_DEPTH)
         if words:
             check_words(session, item_kind, item, " ".join(words), depth)

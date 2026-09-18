@@ -62,7 +62,8 @@ Each tab is one of the checks, and results appear as they arrive:
   is, or every project inside a studio
 - **Search words** — where something ranks for words people type, and what
   would move it up
-- **Try titles** — how crowded each title you're considering already is
+- **Try titles** — suggests titles it could reach the first screen with, or
+  says how crowded the ones you're considering already are
 - **Find studios** — studios about a topic that anyone can add projects to
 - **Where it ranks** — the searches something already comes up for
 - **History** — the chart page of every check you've run
@@ -97,6 +98,21 @@ Not in search yet
   to show up, so check again in a few days.
     The Boring Legal Machine V2  https://scratch.mit.edu/projects/1256400969/
     Fish Clicker V1  https://scratch.mit.edu/projects/1380420363/
+```
+
+`--suggest` looks for a title it could actually be found by. This project was
+past result 200 for its own name:
+
+```
+  Now: "Clock"
+    Not on the first screen. 40+ projects match, and the first screen starts
+    at 350 loves. This one has 2 loves.
+
+  Titles it could be on the first screen for, busiest search first:
+
+  1. "Clock Simulator"
+     40+ projects match, and the first screen starts at 2 loves. This one has
+     2 loves.
 ```
 
 Adding words checks a search people would actually type, and says what would
@@ -141,6 +157,7 @@ There's more, but only if you ask for it:
 | Flag | What it does |
 |---|---|
 | `--find-studios WORDS` | Active studios about WORDS that anyone can add projects to |
+| `--suggest` | Titles it could reach the first screen with, busiest search first |
 | `--titles "A" "B"` | Compares titles you're thinking about before you rename |
 | `--find-words` | Lists searches your project already comes up for |
 | `--contents` | Checks every project in a studio (a tickbox in the GUI version) |
@@ -168,6 +185,11 @@ The tips it gives come from measuring real search results, not guessing:
 - Search pages aren't reliable. When results tie, some show up twice and others
   get skipped, so SpriteScout looks again with the page breaks moved before it
   says anything is missing.
+- No single common word is within reach. Every one-word search I measured —
+  game, simulator, clicker, tycoon, obby, idle and thirty more — has a first
+  screen held by projects with hundreds or thousands of loves. The cheapest,
+  "idle", still needs 128. Pairing a word of your own with one people search is
+  what gets you on the first screen, which is what `--suggest` looks for.
 - Search stops at 10,000 results. Past that, nobody can reach you by scrolling.
 
 ## Helping out

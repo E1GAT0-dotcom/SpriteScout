@@ -328,6 +328,49 @@ def offline_tests():
     check("a search stopped partway isn't counted as missing",
           len(ranked) + len(unranked) < ideas and ideas > 2, (ranked, unranked, ideas))
 
+    # Suggesting titles it could reach the first screen with
+    clicker = {"id": 5, "title": "Sand box", "stats": {"loves": 3},
+               "description": "an idle clicker", "instructions": ""}
+    ideas = scout.title_ideas(clicker)
+    check("suggests titles from the words it already has and the words people search",
+          "Sandbox" in ideas and "Sand Clicker" in ideas and "Sand Idle" in ideas
+          and "Sand box" not in ideas and all(idea[0].isupper() for idea in ideas), ideas)
+    check("suggests nothing for a title with no words to build on",
+          scout.title_ideas({"id": 1, "title": "!!!", "description": "", "instructions": ""}) == [])
+
+    shouty = {"id": 6, "title": "MAGIE by iPhone", "description": "", "instructions": ""}
+    check("leaves unusual capitals alone, and drops filler words",
+          scout.keep_words(shouty) == ["MAGIE", "iPhone"], scout.keep_words(shouty))
+
+    crowds = {
+        "Sand box": [{"id": n, "title": "Sand box", "stats": {"loves": 8}} for n in range(40)],
+        "Sandbox": [{"id": n, "title": "Sandbox", "stats": {"loves": 90}} for n in range(40)],
+        "Sand Clicker": [{"id": n, "title": "Sand Clicker", "stats": {"loves": 2}} for n in range(40)],
+        "Sand Idle": [{"id": n, "title": "Sand Idle", "stats": {"loves": 1}} for n in range(20)],
+        "Box Clicker": [{"id": 5, "title": "Sand box", "stats": {"loves": 3}}],  # only itself
+    }
+
+    def crowded(kind, query, sort, offset, limit):
+        return tuple(crowds.get(query, ())[offset: offset + limit])
+
+    with Patch(scout, search_page=crowded):
+        winners, empty, now = scout.better_titles("projects", clicker)
+    names = [winner["title"] for winner in winners]
+    check("ranks the busiest search it could still win first",
+          names[:2] == ["Sand Clicker", "Sand Idle"] and "Sandbox" not in names, names)
+    check("counts how it does now, and how many ideas it turned down",
+          now["wins"] is False and now["lowest"] == 8 and now["beaten"] >= 1, now)
+    check("leaves made-up joined words out of the only-result list",
+          "Sandbox Clicker" in empty and "Sandbox" not in empty and "Box Clicker" not in empty, empty)
+    check("a search where only this project matches still counts as winnable",
+          "Box Clicker" in names, names)
+
+    check("says how crowded a search is in words people use",
+          scout.crowd_text("projects", {"crowd": 40, "lowest": 350}).endswith("starts at 350 loves")
+          and "no loves at all" in scout.crowd_text("projects", {"crowd": 40, "lowest": 0})
+          and "too few" in scout.crowd_text("projects", {"crowd": 5, "lowest": 2})
+          and "only result" in scout.crowd_text("projects", {"crowd": 0, "lowest": 0}))
+
     # The GUI version: it serves its page and shares the text version's engine
     import socketserver
     import threading
@@ -435,6 +478,8 @@ def offline_tests():
           "what the studios should be about" in gui_error(gui.find_studios, "").lower())
     check("the GUI version explains searches without a project",
           "one project or studio" in gui_error(gui.find_searches, "griffpatch"))
+    check("the GUI version explains suggestions without a project",
+          "one project or studio" in gui_error(gui.suggest_titles, "griffpatch", ""))
     check("the GUI version explains a scan for a result that has gone",
           "Check it again first" in gui_error(gui.scan_deeper, "7"))
     check("the GUI version explains a scan for something that isn't a row",
@@ -655,6 +700,9 @@ def live_tests(program, quick, only=None):
         ("--titles", ["74763380", "--titles", "Pizza Rush", "Horror Pizza", "!!!"],
          ["(current title)", 'Searching "horror" on its own finds nothing', "no letters or numbers"], 0, None, True),
         ("--titles for a studio", ["studio", "416070", "--titles", "Games"], ["followers"], 0, None, False),
+        ("--suggest", ["74763380", "--suggest"],
+         ["Looking for titles", "Now:", "first screen"], 0, None, True),
+        ("--suggest after a username", ["griffpatch", "--suggest"], ["looks like a username"], 1, None, False),
         ("--find-words", ["74763380", "--find-words", "--top", "3"], ["Searches it comes up for"], 0, None, False),
         ("--find-words with extra words", ["74763380", "delivery", "--find-words", "--top", "3"], ["Trying"], 0, None, False),
         ("--find-words for a studio", ["studio", "416070", "--find-words", "--top", "3"], ["Searches it comes up for"], 0, None, False),
