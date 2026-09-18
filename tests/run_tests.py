@@ -61,9 +61,12 @@ class Patch:
 
 
 def settings(*flags):
-    """A session using these flags, with results going in output/test-run/offline."""
+    """A session using these flags, with results in output/test-run/offline unless told otherwise."""
+    flags = list(flags)
+    if "--output" not in flags:
+        flags += ["--output", str(RUN / "offline")]
     session = scout.Session(interactive=True)
-    session.use(scout.make_parser().parse_args([*flags, "--output", str(RUN / "offline")]))
+    session.use(scout.make_parser().parse_args(flags))
     return session
 
 
@@ -296,6 +299,40 @@ def offline_tests():
     with Patch(scout, search_page=closed_studios):
         message = printed(scout.find_studios, ["platformer"])
     check("says when no studios are open to everyone", "None found" in message, message)
+
+    # Telling you when a newer version is out
+    check("compares versions",
+          scout.newer_version_line("1.9").startswith("SpriteScout 1.9 is out")
+          and scout.newer_version_line("1.10").startswith("SpriteScout 1.10 is out")
+          and scout.newer_version_line(scout.VERSION) == ""
+          and scout.newer_version_line("0.9") == "" and scout.newer_version_line(None) == "")
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.close()
+
+    settings("--output", str(RUN / "offline" / "update"))
+    with Patch(scout.urllib.request, urlopen=lambda request, timeout=None: Answer(b'{"tag_name": "v9.9"}')):
+        first = scout.update_note()
+    def refuse(request, timeout=None):
+        raise AssertionError("checked twice in one day")
+    with Patch(scout.urllib.request, urlopen=refuse):
+        second = scout.update_note()
+    check("notices a newer version, and only asks once a day",
+          first.startswith("SpriteScout 9.9 is out") and second == first, (first, second))
+
+    with Patch(scout.urllib.request, urlopen=refuse):
+        settings("--output", str(RUN / "offline" / "update2"), "--no-update-check")
+        check("skips the check when asked", scout.update_note() == "")
+        settings("--output", str(RUN / "offline" / "update3"))
+        def fail(request, timeout=None):
+            raise urllib.error.URLError("no internet")
+        with Patch(scout.urllib.request, urlopen=fail):
+            quiet = scout.update_note()
+            check("stays quiet when it can't check", quiet == "", f"got {quiet!r}")
 
     # Talking to Scratch when things go wrong, with a pretend internet
     class Answer(io.BytesIO):

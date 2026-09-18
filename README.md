@@ -34,6 +34,9 @@ python spritescout.py
 
 Type `help` in the window to see every command and flag.
 
+Once a day it asks GitHub whether a newer version is out, and says so if there
+is one. `--no-update-check` turns that off.
+
 ## What it looks like
 
 Checking my own account:

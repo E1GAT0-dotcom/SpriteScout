@@ -47,7 +47,9 @@ try:
 except ImportError:
     msvcrt = None
 
-VERSION = "1.7"
+VERSION = "1.8"
+RELEASES = "https://github.com/E1GAT0-dotcom/SpriteScout/releases"
+LATEST_RELEASE = "https://api.github.com/repos/E1GAT0-dotcom/SpriteScout/releases/latest"
 FROZEN = getattr(sys, "frozen", False)  # running as SpriteScout.exe
 HERE = Path(sys.executable if FROZEN else __file__).resolve().parent
 OUTPUT = HERE / "output"  # where results, the history page and error reports go
@@ -188,6 +190,8 @@ OPTIONS = [
      "Save results in FOLDER (default: the output folder)"),
     ("Settings", ["--no-log"], {"action": "store_true"},
      "Don't save results"),
+    ("Settings", ["--no-update-check"], {"action": "store_true"},
+     "Don't look for a newer version"),
     ("Settings", ["--version"], {"action": "store_true"},
      "Show the version number"),
     ("Settings", ["-h", "--help"], {"action": "store_true"},
@@ -427,6 +431,49 @@ def fill_details(kind, item):
         details = get_json(f"/projects/{item['id']}") or {}
         item["history"] = details.get("history") or {}
         item["stats"] = details.get("stats") or {}
+
+
+def update_note():
+    """A line about a newer version being out, or "" when there isn't one.
+
+    Looks at the releases page at most once a day, and stays quiet about any
+    problem: being unable to check is never worth interrupting someone over.
+    """
+    if settings.no_update_check:
+        return ""
+    try:
+        folder = output_folder(settings)
+    except CheckError:
+        folder = OUTPUT
+    record, saved = folder / "update-check.json", {}
+    try:
+        saved = json.loads(record.read_text(encoding="utf-8"))
+        if time.time() - saved["checked_at"] < 24 * 60 * 60:
+            return newer_version_line(saved.get("version"))
+    except (OSError, ValueError, KeyError):
+        pass
+    version = saved.get("version")
+    try:
+        request = urllib.request.Request(LATEST_RELEASE, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            version = json.load(response).get("tag_name", "").lstrip("vV") or version
+    except Exception:  # an update check is never worth an error message
+        pass
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        record.write_text(json.dumps({"checked_at": time.time(), "version": version}), encoding="utf-8")
+    except OSError:
+        pass
+    return newer_version_line(version)
+
+
+def newer_version_line(version):
+    def numbers(text):
+        return [int(part) for part in re.findall(r"\d+", text or "")]
+
+    if numbers(version) > numbers(VERSION):
+        return f"SpriteScout {version} is out, and this is {VERSION}. Get it from {RELEASES}"
+    return ""
 
 
 def words_with_no_results(kind, text):
@@ -1788,6 +1835,9 @@ def main():
             run(session, defaults)
         except CheckError as error:
             sys.exit(str(error))
+        update = update_note()
+        if update:
+            print(f"\n{update}")
         return
 
     # Nothing to do yet (for example, the program was double-clicked): keep
@@ -1800,6 +1850,9 @@ def main():
     print(help_text())
     saving = "Results aren't being saved." if defaults.no_log else f"Results are saved in {session.log.path.parent}"
     print(f"\n{saving}\nType help to see this list again.")
+    update = update_note()
+    if update:
+        print(f"\n{update}")
     while True:
         try:
             text = clean_input(input("\nCommand: "))
