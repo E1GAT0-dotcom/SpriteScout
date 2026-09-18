@@ -1,6 +1,6 @@
-"""SpriteScout with a window: the same checks, shown as a page in your browser.
+"""SpriteScout with buttons: the same checks, shown as a page in your browser.
 
-Double-click the window build (or run this file) and it opens a page where you
+Double-click the GUI build (or run this file) and it opens a page where you
 can check a username, project or studio, and see where something ranks for
 words people search. It uses the same checking code as spritescout.py, and
 saves results to the same place.
@@ -74,22 +74,34 @@ def remember(values):
 
 
 def settings_file():
-    return scout.output_folder(scout.make_parser().parse_args([])) / "window-settings.json"
+    """Where the settings live, brought over from the name an older version used."""
+    folder = scout.output_folder(scout.make_parser().parse_args([]))
+    path, older = folder / "gui-settings.json", folder / "window-settings.json"
+    if older.exists() and not path.exists():
+        try:
+            older.replace(path)
+        except OSError:
+            return older  # keep using the old one rather than forget everything
+    return path
 
 
 # Running checks in the background, so the page can show them as they arrive
 
 def start(kind, work, *arguments, keep=False):
-    """Run a check in the background. `keep` leaves the results already on screen alone."""
+    """Start a check in the background, unless one is already going.
+
+    `keep` leaves the results already on screen alone. Returns whether it started.
+    """
     with job_lock:
         if job["state"] == "running":
-            return
+            return False
         job.update(state="running", error="", stopped=False)
         if not keep:
             job.update(kind=kind, heading="", checked=0, total=0, items=[], detail=None)
             unfinished.clear()
     stopping.clear()
     threading.Thread(target=guard, args=(work, arguments), daemon=True).start()
+    return True
 
 
 def guard(work, arguments):
@@ -98,16 +110,18 @@ def guard(work, arguments):
     try:
         session.use(scout.make_parser().parse_args(saved_flags()))
         work(session, *arguments)
-        session.log.save()
     except scout.CheckError as error:
         with job_lock:
             job["error"] = str(error)
     except Exception as error:  # a bug: say so, and save the details like the console version does
         with job_lock:
-            job["error"] = scout.bug_message(error, f"window: {arguments}")
+            job["error"] = scout.bug_message(error, f"gui: {arguments}")
         traceback.print_exc()
     finally:
+        # Keep whatever did finish, even when the rest went wrong.
+        trouble = session.log.save() if session.log else ""
         with job_lock:
+            job["error"] = job["error"] or trouble
             job["state"] = "done"
 
 
@@ -147,7 +161,7 @@ def check_titles(session, text):
 
 def scan_deeper(session, place):
     """Keep looking for one result that stopped early, until it's found or Stop is pressed."""
-    found = unfinished.get(int(place))
+    found = unfinished.get(int(place)) if str(place).isdigit() else None
     if not found:
         raise scout.CheckError("That result isn't on screen any more. Check it again first.")
     kind, item, lookup = found
@@ -185,7 +199,10 @@ def check_words(session, text, words):
     for sort in wanted:
         lookup = scout.Lookup(kind, item, query, sort)
         lookup.matches = scout.format_count(matches).replace(",", "")
-        scout.keep_looking(lookup, depths[sort])
+        if scout.keep_looking(lookup, depths[sort], should_stop=stopping.is_set):
+            with job_lock:
+                job["stopped"] = True
+            return
         lookups[sort] = lookup
         change = session.log.add(kind, item, query, sort, scout.result_text(lookup), lookup.rank, lookup.matches)
         sorts.append({
@@ -219,6 +236,10 @@ def try_titles(session, text, titles):
                    detail={"title": scout.tidy(item["title"]), "url": scout.item_url(kind, item),
                            "kind": scout.NOUNS[kind], "about": scout.describe_item(kind, item), "titles": []})
     for title in options:
+        if stopping.is_set():
+            with job_lock:
+                job["stopped"] = True
+            return
         verdict = scout.title_verdict(kind, item, title)
         with job_lock:
             job["checked"] += 1
@@ -237,9 +258,13 @@ def find_studios(session, words):
     def step(done, total):  # checking how active each studio is takes a moment each
         job.update(checked=done, total=total)
 
-    studios, note = scout.open_studios(query.split(), progress=step)
+    studios, note = scout.open_studios(query.split(), progress=step, should_stop=stopping.is_set)
     with job_lock:
-        job["checked"] = job["total"]
+        job["stopped"] = stopping.is_set()
+        if job["stopped"]:
+            note = ""  # "none found" would be wrong when it was called off early
+        else:
+            job["checked"] = job["total"]
         job["detail"] = {"query": query, "note": note, "studios": [
             {"title": scout.tidy(studio["title"]), "url": scout.item_url("studios", studio),
              "followers": scout.plural(scout.followers_of(studio), "follower"),
@@ -253,8 +278,10 @@ def find_searches(session, text):
     sort, depth = scout.title_sort(), depth_for(scout.WORDS_DEPTH)
     with job_lock:
         job.update(total=1, heading=f"searches for \"{scout.tidy(item['title'])}\"")
-    ranked, unranked = scout.word_rankings(session, kind, item, (), depth, sort)
+    ranked, unranked = scout.word_rankings(session, kind, item, (), depth, sort,
+                                           should_stop=stopping.is_set)
     with job_lock:
+        job["stopped"] = stopping.is_set()
         job["checked"] = 1
         job["detail"] = {
             "title": scout.tidy(item["title"]), "url": scout.item_url(kind, item),
@@ -277,7 +304,7 @@ def one_item(text, complaint):
 def update_notice():
     """What to put at the top of the page when a newer version is out.
 
-    The window build has no console, so the notice the console version prints
+    The GUI build has no console, so the notice the text version prints
     has to appear on the page instead.
     """
     if remembered().get("no_update_check"):
@@ -349,20 +376,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/icon.png" and ICON.exists():
             self.send_file(ICON.read_bytes(), "image/png")
         elif path == "/check":
-            start("titles", check_titles, asked.get("what", [""])[0].strip())
-            self.send_json({"started": True})
+            self.send_started(start("titles", check_titles, asked.get("what", [""])[0].strip()))
         elif path == "/words":
-            start("words", check_words, asked.get("what", [""])[0].strip(), asked.get("words", [""])[0])
-            self.send_json({"started": True})
+            self.send_started(start("words", check_words, asked.get("what", [""])[0].strip(),
+                                    asked.get("words", [""])[0]))
         elif path == "/titles":
-            start("titles-test", try_titles, asked.get("what", [""])[0].strip(), asked.get("titles", [""])[0])
-            self.send_json({"started": True})
+            self.send_started(start("titles-test", try_titles, asked.get("what", [""])[0].strip(),
+                                    asked.get("titles", [""])[0]))
         elif path == "/studios":
-            start("studios", find_studios, asked.get("words", [""])[0])
-            self.send_json({"started": True})
+            self.send_started(start("studios", find_studios, asked.get("words", [""])[0]))
         elif path == "/searches":
-            start("searches", find_searches, asked.get("what", [""])[0].strip())
-            self.send_json({"started": True})
+            self.send_started(start("searches", find_searches, asked.get("what", [""])[0].strip()))
         elif path == "/history":
             page = history_page()
             if page:
@@ -374,8 +398,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with job_lock:
                 self.send_json(dict(job))
         elif path == "/scan":
-            start("titles", scan_deeper, asked.get("place", ["0"])[0], keep=True)
-            self.send_json({"started": True})
+            self.send_started(start("titles", scan_deeper, asked.get("place", [""])[0], keep=True))
         elif path == "/stop":
             stopping.set()
             self.send_json({"stopping": True})
@@ -399,6 +422,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_started(self, started):
+        self.send_json({"started": started})
 
     def send_json(self, data):
         self.send_file(json.dumps(data).encode("utf-8"), "application/json")

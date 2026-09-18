@@ -323,8 +323,13 @@ element("ask-settings").addEventListener("submit", async event => {
   event.preventDefault();
   const asked = settingNames.map(name => `${name}=${encodeURIComponent(value(name))}`);
   asked.push("no_update_check=" + (element("set-updates").checked ? "" : "1"));
-  const saved = await (await fetch("/save?" + asked.join("&"))).json();
   const note = element("saved-note");
+  let saved;
+  try {
+    saved = await (await fetch("/save?" + asked.join("&"))).json();
+  } catch {
+    return gone();
+  }
   note.textContent = saved.error || "Saved. Checks from now on will use these.";
   note.classList.toggle("bad", Boolean(saved.error));
 });
@@ -332,10 +337,14 @@ element("ask-settings").addEventListener("submit", async event => {
 stopButton.addEventListener("click", async () => {
   stopButton.disabled = true;
   statusLine.textContent = "Stopping…";
-  await fetch("/stop");
+  try {
+    await fetch("/stop");
+  } catch {
+    gone();
+  }
 });
 
-fetch("/update").then(response => response.json()).then(update => {
+fetch("/update").then(response => response.json()).catch(() => ({})).then(update => {
   if (!update.note) return;
   const banner = element("update");
   banner.href = update.url;
@@ -343,7 +352,7 @@ fetch("/update").then(response => response.json()).then(update => {
   banner.hidden = false;
 });
 
-fetch("/settings").then(response => response.json()).then(saved => {
+fetch("/settings").then(response => response.json()).catch(() => ({})).then(saved => {
   for (const name of settingNames) if (saved[name]) element("set-" + name).value = saved[name];
   element("set-updates").checked = !saved.no_update_check;
   if (!saved.username) return;
@@ -361,6 +370,19 @@ function value(name) {
 }
 
 async function begin(url, keep) {
+  statusLine.textContent = "Asking Scratch…";
+  working(true);
+  let answer;
+  try {
+    answer = await (await fetch(url)).json();
+  } catch {
+    return gone();
+  }
+  if (!answer.started) {  // something else is still going, so leave it on screen
+    working(false);
+    statusLine.textContent = "Still finishing the last check.";
+    return;
+  }
   if (!keep) {
     rows.replaceChildren();
     detail.replaceChildren();
@@ -370,12 +392,17 @@ async function begin(url, keep) {
     fill.style.width = "0";
   }
   problem.hidden = true;
-  statusLine.textContent = "Asking Scratch…";
-  working(true);
-  await fetch(url);
   clearInterval(polling);
   polling = setInterval(poll, 700);
   poll();
+}
+
+function gone() {
+  clearInterval(polling);
+  working(false);
+  statusLine.textContent = "";
+  problem.textContent = "SpriteScout isn't running any more. Start it again, then reload this page.";
+  problem.hidden = false;
 }
 
 function working(on) {
@@ -386,7 +413,12 @@ function working(on) {
 }
 
 async function poll() {
-  const job = await (await fetch("/progress")).json();
+  let job;
+  try {
+    job = await (await fetch("/progress")).json();
+  } catch {
+    return gone();  // the program was closed, or it stopped
+  }
   if (job.error) {
     problem.textContent = job.error;
     problem.hidden = false;

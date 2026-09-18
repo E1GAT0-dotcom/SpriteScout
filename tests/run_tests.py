@@ -183,10 +183,12 @@ def offline_tests():
     os.chmod(locked, stat.S_IREAD)
     log = scout.Log(locked)
     log.add("projects", {"id": 1, "title": "x"}, "x", "popular", "Easy to find", 1)
-    message = printed(log.save)
+    trouble = log.save()
+    spoken = printed(scout.say_any_problem, trouble)
     os.chmod(locked, stat.S_IREAD | stat.S_IWRITE)
     check("explains a log it can't save, and keeps the results for later",
-          "Couldn't save results" in message and len(log.pending) == 1, message)
+          "Couldn't save results" in trouble and "Couldn't save results" in spoken
+          and len(log.pending) == 1, (trouble, spoken))
 
     home = folder / "old_home"
     home.mkdir(exist_ok=True)
@@ -300,7 +302,33 @@ def offline_tests():
         message = printed(scout.find_studios, ["platformer"])
     check("says when no studios are open to everyone", "None found" in message, message)
 
-    # The window version: it serves its page and shares the console version's engine
+    def open_to_all(kind, query, sort, offset, limit):
+        return (({"id": 7, "title": "Platformer Games", "open_to_all": True},
+                 {"id": 8, "title": "Platformer Games Too", "open_to_all": True}) if offset == 0 else ())
+
+    looked_at = []
+    with Patch(scout, search_page=open_to_all, days_since_activity=looked_at.append):
+        stopped_studios = scout.open_studios(["platformer"], should_stop=lambda: True)
+    check("stops working out which studios are active when asked to",
+          stopped_studios[0] == [] and looked_at == [], (stopped_studios, looked_at))
+
+    tried = []
+
+    def note_search(kind, query, sort, offset, limit):
+        tried.append(query)
+        return ()
+
+    many_words = {"id": 5, "title": "Pizza Tycoon Deluxe Edition", "stats": {"loves": 1}}
+    session = settings("--no-log")
+    with Patch(scout, search_page=note_search):
+        ideas = len(scout.search_ideas("projects", many_words, ()))
+        tried.clear()
+        ranked, unranked = scout.word_rankings(session, "projects", many_words, (), 200, "popular",
+                                               should_stop=lambda: len(tried) >= 2)
+    check("a search stopped partway isn't counted as missing",
+          len(ranked) + len(unranked) < ideas and ideas > 2, (ranked, unranked, ideas))
+
+    # The GUI version: it serves its page and shares the text version's engine
     import socketserver
     import threading
     import urllib.request
@@ -310,24 +338,31 @@ def offline_tests():
     lookup = scout.Lookup("projects", {"id": 5, "title": "Demo", "stats": {"loves": 1}}, "Demo")
     lookup.rank = 3
     row = gui.row("projects", lookup.item, lookup, "easy", "no change since 2026-09-01")
-    check("the window version describes results the same way the console does",
+    check("the GUI version describes results the same way the console does",
           row["label"] == "Easy to find" and row["rank"] == 3 and row["count"] == "1 love"
           and row["url"].endswith("/projects/5/") and row["change"] == "", row)
 
     stopped = scout.Lookup("projects", lookup.item, "Demo")
     stopped.checked = 200
     later = gui.row("projects", stopped.item, stopped, "unknown", "", 2)
-    check("the window version marks results a scan could look further for",
+    check("the GUI version marks results a scan could look further for",
           later["scannable"] is True and later["place"] == 2 and row["scannable"] is False, later)
 
-    home = RUN / "offline" / "window"
+    home = RUN / "offline" / "gui"
     with Patch(scout, HERE=home, OUTPUT=home / "output"):
+        moved = home / "output" / "window-settings.json"
+        moved.parent.mkdir(parents=True, exist_ok=True)
+        moved.write_text('{"username": "from-before"}', encoding="utf-8")
+        check("the GUI version keeps the settings an older version saved",
+              gui.remembered().get("username") == "from-before" and not moved.exists(),
+              (gui.remembered(), moved.exists()))
+
         gui.remember({"username": "demo"})
-        check("the window version remembers your username", gui.remembered().get("username") == "demo",
+        check("the GUI version remembers your username", gui.remembered().get("username") == "demo",
               gui.remembered())
 
         gui.save_settings({"sort": "trending", "depth": "500", "first_screen": "", "top": "3"})
-        check("the window version passes saved settings to the checks",
+        check("the GUI version passes saved settings to the checks",
               gui.saved_flags() == ["--sort", "trending", "--depth", "500", "--top", "3"],
               gui.saved_flags())
         try:
@@ -335,17 +370,17 @@ def offline_tests():
             refused = "(allowed it)"
         except scout.CheckError as error:
             refused = str(error)
-        check("the window version turns down a setting it can't use",
+        check("the GUI version turns down a setting it can't use",
               "10,000" in refused and "depth" in refused, refused)
         check("a setting it turns down doesn't replace the saved one",
               gui.remembered().get("depth") == "500", gui.remembered())
 
         gui.save_settings({**gui.remembered(), "no_update_check": "1"})
-        check("the window version can be told to stop checking for new versions",
+        check("the GUI version can be told to stop checking for new versions",
               "--no-update-check" in gui.saved_flags() and gui.update_notice() == {}, gui.saved_flags())
         gui.save_settings({**gui.remembered(), "no_update_check": ""})
 
-    def window_error(work, *arguments):
+    def gui_error(work, *arguments):
         gui.start("test", work, *arguments)
         for _ in range(50):
             if gui.job["state"] == "done":
@@ -353,18 +388,43 @@ def offline_tests():
             time.sleep(0.1)
         return "(never finished)"
 
-    check("the window version explains search words without a project",
-          "one project or studio" in window_error(gui.check_words, "griffpatch", "platformer"))
-    check("the window version explains titles without a project",
-          "one project or studio" in window_error(gui.try_titles, "griffpatch", "A title"))
-    check("the window version asks for titles to try",
-          "one per line" in window_error(gui.try_titles, "123", ""))
-    check("the window version asks what the studios should be about",
-          "what the studios should be about" in window_error(gui.find_studios, "").lower())
-    check("the window version explains searches without a project",
-          "one project or studio" in window_error(gui.find_searches, "griffpatch"))
-    check("the window version explains a scan for a result that has gone",
-          "Check it again first" in window_error(gui.scan_deeper, "7"))
+    check("the GUI version explains search words without a project",
+          "one project or studio" in gui_error(gui.check_words, "griffpatch", "platformer"))
+    check("the GUI version explains titles without a project",
+          "one project or studio" in gui_error(gui.try_titles, "griffpatch", "A title"))
+    check("the GUI version asks for titles to try",
+          "one per line" in gui_error(gui.try_titles, "123", ""))
+    check("the GUI version asks what the studios should be about",
+          "what the studios should be about" in gui_error(gui.find_studios, "").lower())
+    check("the GUI version explains searches without a project",
+          "one project or studio" in gui_error(gui.find_searches, "griffpatch"))
+    check("the GUI version explains a scan for a result that has gone",
+          "Check it again first" in gui_error(gui.scan_deeper, "7"))
+    check("the GUI version explains a scan for something that isn't a row",
+          "Check it again first" in gui_error(gui.scan_deeper, "not-a-row"))
+
+    locked_log = home / "output" / "search_log.csv"
+    locked_log.parent.mkdir(parents=True, exist_ok=True)
+    locked_log.write_text("checked_at" + chr(10), encoding="utf-8")
+    os.chmod(locked_log, stat.S_IREAD)
+    with Patch(scout, HERE=home, OUTPUT=home / "output"):
+        unsaved = gui_error(lambda session: session.log.add(
+            "projects", {"id": 1, "title": "x"}, "x", "popular", "Easy to find", 1))
+    os.chmod(locked_log, stat.S_IREAD | stat.S_IWRITE)
+    check("the GUI version says when results wouldn't save, having no console to say it in",
+          "Couldn't save results" in unsaved, unsaved)
+
+    busy = threading.Event()
+    first_start = gui.start("test", lambda session: busy.wait(10))
+    second_start = gui.start("test", lambda session: None)
+    busy.set()
+    for _ in range(100):
+        if gui.job["state"] == "done":
+            break
+        time.sleep(0.1)
+    check("the GUI version turns down a second check while one is still going",
+          first_start is True and second_start is False and gui.job["state"] == "done",
+          (first_start, second_start, gui.job["state"]))
 
     pages = {"asked": 0}
 
@@ -382,7 +442,7 @@ def offline_tests():
     session = settings("--no-log")  # made first: patching search_page hides its cache
     with Patch(scout, search_page=busy_search):
         gui.scan_deeper(session, "0")
-    check("the window version's scan stops when asked, and can be carried on later",
+    check("the GUI version's scan stops when asked, and can be carried on later",
           gui.job["stopped"] and gui.job["items"][0]["scannable"] is True and 0 in gui.unfinished
           and waiting.checked > 80, (gui.job["items"][0], waiting.checked))
     gui.stopping.clear()
@@ -399,9 +459,11 @@ def offline_tests():
         stopping = json.loads(urllib.request.urlopen(address + "stop", timeout=10).read())
         server.shutdown()
     gui.stopping.clear()
-    check("the window version serves its page", f">{scout.VERSION}<" in page and "SpriteScout" in page
+    check("the GUI version serves its page", f">{scout.VERSION}<" in page and "SpriteScout" in page
           and "__VERSION__" not in page and icon.status == 200, page[:200])
-    check("the window version's page has its stop, scan and settings controls",
+    check("the page says what happened instead of going quiet when the program is closed",
+          "isn't running any more" in page and "Still finishing the last check" in page)
+    check("the GUI version's page has its stop, scan and settings controls",
           'id="stop"' in page and "Keep looking" in page and 'id="set-depth"' in page
           and "/save?" in page and "/scan?" in page and '"/update"' in page)
 
@@ -410,12 +472,12 @@ def offline_tests():
         notice = gui.update_notice()
     with Patch(scout, update_note=lambda: ""):
         quiet = gui.update_notice()
-    check("the window version shows a new version on the page, having no console to print to",
+    check("the GUI version shows a new version on the page, having no console to print to",
           notice["note"] == f"SpriteScout 9.9 is out, and this is {scout.VERSION}."
           and notice["url"] == scout.RELEASES and quiet == {}, (notice, quiet))
-    check("the window version lets you clear a setting by emptying the box",
+    check("the GUI version lets you clear a setting by emptying the box",
           not cleared.get("depth"), cleared)
-    check("the window version says why a setting won't do, instead of breaking",
+    check("the GUI version says why a setting won't do, instead of breaking",
           "whole number" in refused.get("error", "") and stopping == {"stopping": True},
           (refused, stopping))
 
@@ -581,12 +643,12 @@ def live_tests(program, quick, only=None):
         ("search words after a username", ["griffpatch", "platformer"], ["looks like a username"], 1, None, False),
         ("--find-words on its own", ["--find-words"], ["go after a project or studio"], 1, None, False),
         ("search words with no letters", ["74763380", "!!!"], ["at least one letter"], 1, None, False),
-        ("window: quit right away", [], ["Commands", "Results are saved in"], 0, "q\n", True),
-        ("window: many commands and mistakes", [],
+        ("prompt: quit right away", [], ["Commands", "Results are saved in"], 0, "q\n", True),
+        ("prompt: many commands and mistakes", [],
          [f"SpriteScout {scout.VERSION}", "Those settings will be used", "Nothing to scan",
           "looks like a username", "closing quote", "can't tell what", "Popular, the default sort"], 0, WINDOW_SCRIPT, True),
-        ("window: input ends without quitting", [], ["Commands"], 0, "", False),
-        ("window: pasted text with an invisible mark", [], ["Commands", "!can't tell what"], 0, "﻿q\n", False),
+        ("prompt: input ends without quitting", [], ["Commands"], 0, "", False),
+        ("prompt: pasted text with an invisible mark", [], ["Commands", "!can't tell what"], 0, "﻿q\n", False),
     ]
     log_file = RUN / "search_log.csv"
     for name, arguments, expected, exit_code, typed, in_quick_run in tests:

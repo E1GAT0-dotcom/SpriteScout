@@ -610,11 +610,12 @@ class Log:
         return change
 
     def save(self):
+        """Write the results waiting to be saved. Returns a message when they couldn't be."""
         if not self.path:
             self.pending.clear()
-            return
+            return ""
         if not self.pending:
-            return
+            return ""
         temp = self.path.with_name(self.path.name + ".tmp")
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -638,8 +639,9 @@ class Log:
         except OSError as error:
             if temp.exists():
                 temp.unlink()
-            print(f"\nCouldn't save results to {self.path} ({error.strerror or error}). "
-                  "If it's open in Excel, close it and they'll be saved after the next check.")
+            return (f"Couldn't save results to {self.path} ({error.strerror or error}). "
+                    "If it's open in Excel, close it and they'll be saved after the next check.")
+        return ""
 
 
 def read_log(path):
@@ -985,12 +987,12 @@ def has_word(words, word):
 
 # Extra features, each turned on with its own flag
 
-def open_studios(words, progress=None):
+def open_studios(words, progress=None, should_stop=None):
     """Active studios about some words that anyone can add projects to, most followed first.
 
     Checking how active each one is takes a request each, so `progress` is called
-    with (done, total) along the way. Returns (studios, note), where the note
-    explains an empty list.
+    with (done, total) along the way, and should_stop() can call it off. Returns
+    (studios, note), where the note explains an empty list.
     """
     query = " ".join(words)
     topic = [word for word in words_in(query) if word not in STOP_WORDS]
@@ -1009,6 +1011,8 @@ def open_studios(words, progress=None):
     wanted = list(candidates.values())[: max(settings.top, 1) * 3]
     active = []
     for done, studio in enumerate(wanted, 1):
+        if should_stop and should_stop():
+            break
         if progress:
             progress(done, len(wanted))
         if (days_since_activity(studio["id"]) or float("inf")) <= settings.active_days:
@@ -1094,13 +1098,18 @@ def search_ideas(kind, item, extra_words):
     return ideas
 
 
-def word_rankings(session, kind, item, extra_words, depth, sort):
-    """Try a title's words as searches; returns (the ones it comes up for, the ones it doesn't)."""
+def word_rankings(session, kind, item, extra_words, depth, sort, should_stop=None):
+    """Try a title's words as searches; returns (the ones it comes up for, the ones it doesn't).
+
+    A search that should_stop() cut short is left out of both lists, because
+    nobody knows yet whether it comes up.
+    """
     ideas = search_ideas(kind, item, extra_words)
     ranked, unranked = [], []
     for query in ideas:
         lookup = Lookup(kind, item, query, sort)
-        keep_looking(lookup, depth)
+        if keep_looking(lookup, depth, should_stop=should_stop):
+            break
         session.log.add(kind, item, query, sort, result_text(lookup), lookup.rank)
         (ranked if lookup.rank else unranked).append(lookup)
     return sorted(ranked, key=lambda lookup: lookup.rank), unranked
@@ -1472,7 +1481,7 @@ class Session:
         path = None if args.no_log else output_folder(args) / "search_log.csv"
         if self.log is None or self.log.path != path:
             if self.log:
-                self.log.save()
+                say_any_problem(self.log.save())
             self.log = Log(path)
         for cached in (search_page, get_studio, days_since_activity):
             cached.cache_clear()  # rankings may have changed since the last command
@@ -1518,7 +1527,7 @@ def scan(session):
             session.unfinished.remove(lookup)
             report_scan(session, lookup)
     finally:
-        session.log.save()
+        say_any_problem(session.log.save())
 
 
 def report_scan(session, lookup):
@@ -1573,6 +1582,12 @@ def show_progress(lookup):
 def show_studio_progress(done, total):
     if sys.stdout.isatty():
         print(f"\r  Checking how active {done} of {total} studios are", end="", flush=True)
+
+
+def say_any_problem(message):
+    """Print a problem that isn't worth stopping for, like results that wouldn't save."""
+    if message:
+        print(chr(10) + message)
 
 
 def end_progress():
@@ -1793,7 +1808,7 @@ def run_check(session, args):
     try:
         check_target(session, kind, value, words, args)
     finally:
-        session.log.save()
+        say_any_problem(session.log.save())
     print_scan_hint(session, args)
     if args.scan and session.unfinished:
         scan(session)
