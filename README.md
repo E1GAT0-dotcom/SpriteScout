@@ -1,3 +1,5 @@
+<img src="icon.png" alt="SpriteScout" width="180">
+
 # SpriteScout
 
 I kept sharing games that nobody could find, so I made this to see whether my

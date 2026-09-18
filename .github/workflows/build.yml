@@ -27,12 +27,15 @@ jobs:
           - os: windows-latest
             built: dist/SpriteScout.exe
             asset: SpriteScout-windows.exe
+            icon: --icon icon.ico
           - os: macos-latest
             built: dist/SpriteScout
             asset: SpriteScout-mac
+            icon: ""
           - os: ubuntu-latest
             built: dist/SpriteScout
             asset: SpriteScout-linux
+            icon: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +50,7 @@ jobs:
       - name: Build
         run: |
           pip install pyinstaller==6.22.3
-          pyinstaller --onefile --console --name SpriteScout spritescout.py
+          pyinstaller --onefile --console --name SpriteScout ${{ matrix.icon }} spritescout.py
 
       - name: Name it after the system it's for
         shell: bash
