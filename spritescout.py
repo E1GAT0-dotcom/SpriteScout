@@ -985,10 +985,12 @@ def has_word(words, word):
 
 # Extra features, each turned on with its own flag
 
-def find_studios(words):
-    """--find-studios: active studios about some words that anyone can add projects to."""
+def open_studios(words):
+    """Active studios about some words that anyone can add projects to, most followed first.
+
+    Returns (studios, note), where the note explains an empty list.
+    """
     query = " ".join(words)
-    print(f"\nLooking for active studios about \"{query}\" that anyone can add projects to.")
     topic = [word for word in words_in(query) if word not in STOP_WORDS]
     candidates = {}
     for sort in ("trending", "popular"):
@@ -1000,81 +1002,109 @@ def find_studios(words):
                     candidates.setdefault(studio["id"], studio)
     if not candidates and not search_page("studios", query, "popular", 0, PAGE_SIZE):
         silent = words_with_no_results("studios", query)
-        print()
-        print(wrap(f"No studios come up for \"{query}\" at all. " + (silent_note(silent) + " " if silent else "")
-                   + "Try other words."))
-        return
-    active = []
-    for studio in list(candidates.values())[: max(settings.top, 1) * 3]:
-        days = days_since_activity(studio["id"])
-        if days is not None and days <= settings.active_days:
-            active.append((followers_of(studio), days, studio))
+        return [], (f"No studios come up for \"{query}\" at all. "
+                    + (silent_note(silent) + " " if silent else "") + "Try other words.")
+    active = [studio for studio in list(candidates.values())[: max(settings.top, 1) * 3]
+              if (days_since_activity(studio["id"]) or float("inf")) <= settings.active_days]
     if not active:
-        print("\n  None found. Try other words, or allow older activity with --active-days.")
+        return [], "None found. Try other words, or allow older activity with --active-days."
+    active.sort(key=followers_of, reverse=True)
+    return active[: max(settings.top, 1)], ""
+
+
+def find_studios(words):
+    """--find-studios: active studios about some words that anyone can add projects to."""
+    query = " ".join(words)
+    print(f"\nLooking for active studios about \"{query}\" that anyone can add projects to.")
+    studios, note = open_studios(words)
+    if note:
+        print()
+        print(wrap(note))
         return
-    active.sort(key=lambda entry: entry[0], reverse=True)
     print("\n  Most followed first:\n")
-    for number, (followers, days, studio) in enumerate(active[: max(settings.top, 1)], 1):
-        print(f"  {number:>2}. {short_title(studio['title'], 50)}  ({plural(followers, 'follower')}, active {ago(days)})")
+    for number, studio in enumerate(studios, 1):
+        print(f"  {number:>2}. {short_title(studio['title'], 50)}  "
+              f"({plural(followers_of(studio), 'follower')}, active {ago(days_since_activity(studio['id']))})")
         print(f"      {item_url('studios', studio)}")
     print("\n  Only add projects that fit a studio's topic.")
 
 
-def test_titles(kind, item, titles):
-    """--titles: how crowded each possible title is, and whether the item could make the first screen."""
+def title_verdict(kind, item, title):
+    """What a possible title would be up against in search."""
     noun, stat = NOUNS[kind], "loves" if kind == "projects" else "followers"
     current = tidy(item["title"])
-    mine = stat_of(kind, item)
-    print(f"\nTesting titles for {describe(kind, item)}, which has {plural(mine, stat[:-1])}.")
-    for title in dict.fromkeys([current] + [tidy(title) for title in titles if tidy(title)]):
+    if not re.search(r"\w", title):
+        return "Has no letters or numbers, so nobody could find it by searching."
+    matches = count_matches(kind, title)
+    if matches == 0:
+        silent = words_with_no_results(kind, title)
+        if silent and title == current:
+            return (f"Finds nothing, not even this {noun}. " + silent_note(silent)
+                    + f" If not, this {noun} isn't in search right now.")
+        if silent:
+            return (f"No {noun}s match yet, so it would be the only result, unless Scratch blocks one of "
+                    "its words. " + silent_note(silent))
+        if title == current:
+            return f"Finds nothing, not even this {noun}, so it isn't in search right now."
+        return f"No {noun}s match yet, so it would be the only result."
+    first = first_screen(kind, title, title_sort())
+    stats = [stat_of(kind, other) for other in first]
+    typical = round(statistics.median(word_count(other["title"]) for other in first))
+    text = (f"{matching(matches, noun)}. First screen: {units(stats, stat[:-1])}, "
+            f"titles of about {typical} words.")
+    if matches <= settings.first_screen or stat_of(kind, item) >= min(stats):
+        text += " Likely on the first screen."
+    else:
+        text += f" Unlikely on the first screen, where the lowest has {plural(min(stats), stat[:-1])}."
+    if word_count(title) > typical + 1:
+        text += " Shorter titles tend to rank higher."
+    return text
+
+
+def possible_titles(item, titles):
+    """The current title first, then the ones being tried, without repeats or blanks."""
+    return list(dict.fromkeys([tidy(item["title"])] + [tidy(title) for title in titles if tidy(title)]))
+
+
+def test_titles(kind, item, titles):
+    """--titles: how crowded each possible title is, and whether the item could make the first screen."""
+    stat = "loves" if kind == "projects" else "followers"
+    current = tidy(item["title"])
+    print(f"\nTesting titles for {describe(kind, item)}, which has {plural(stat_of(kind, item), stat[:-1])}.")
+    for title in possible_titles(item, titles):
         print(f"\n  \"{title}\"" + ("  (current title)" if title == current else ""))
-        if not re.search(r"\w", title):
-            print(wrap("Has no letters or numbers, so nobody could find it by searching.", "    "))
-            continue
-        matches = count_matches(kind, title)
-        if matches == 0:
-            silent = words_with_no_results(kind, title)
-            if silent and title == current:
-                text = (f"Finds nothing, not even this {noun}. " + silent_note(silent)
-                        + f" If not, this {noun} isn't in search right now.")
-            elif silent:
-                text = (f"No {noun}s match yet, so it would be the only result, unless Scratch blocks one of "
-                        "its words. " + silent_note(silent))
-            elif title == current:
-                text = f"Finds nothing, not even this {noun}, so it isn't in search right now."
-            else:
-                text = f"No {noun}s match yet, so it would be the only result."
-        else:
-            first = first_screen(kind, title, title_sort())
-            stats = [stat_of(kind, other) for other in first]
-            typical = round(statistics.median(word_count(other["title"]) for other in first))
-            text = (f"{matching(matches, noun)}. First screen: {units(stats, stat[:-1])}, "
-                    f"titles of about {typical} words.")
-            if matches <= settings.first_screen or mine >= min(stats):
-                text += " Likely on the first screen."
-            else:
-                text += f" Unlikely on the first screen, where the lowest has {plural(min(stats), stat[:-1])}."
-            if word_count(title) > typical + 1:
-                text += " Shorter titles tend to rank higher."
-        print(wrap(text, "    "))
+        print(wrap(title_verdict(kind, item, title), "    "))
     print("\n  After renaming, check again in a few days. Search can take a while to catch up.")
 
 
-def find_words(session, kind, item, extra_words, depth):
-    """--find-words: try the words in a title and list the searches the item comes up for."""
-    sort = title_sort()
+def search_ideas(kind, item, extra_words):
+    """Searches worth trying for an item, or an explanation when there are none."""
     ideas = search_word_ideas(item["title"], extra_words)
     if not ideas:
         raise CheckError(f"The title of {describe(kind, item)} has no words to search for. "
                          "Add some words after it to try those instead.")
-    print(f"\nTrying {plural(len(ideas), 'search', 'searches')} for {describe(kind, item)} in "
-          f"{SORTS[sort]}, looking through up to {depth:,} results each.")
+    return ideas
+
+
+def word_rankings(session, kind, item, extra_words, depth, sort):
+    """Try a title's words as searches; returns (the ones it comes up for, the ones it doesn't)."""
+    ideas = search_ideas(kind, item, extra_words)
     ranked, unranked = [], []
     for query in ideas:
         lookup = Lookup(kind, item, query, sort)
         keep_looking(lookup, depth)
         session.log.add(kind, item, query, sort, result_text(lookup), lookup.rank)
         (ranked if lookup.rank else unranked).append(lookup)
+    return sorted(ranked, key=lambda lookup: lookup.rank), unranked
+
+
+def find_words(session, kind, item, extra_words, depth):
+    """--find-words: try the words in a title and list the searches the item comes up for."""
+    sort = title_sort()
+    ideas = search_ideas(kind, item, extra_words)
+    print(f"\nTrying {plural(len(ideas), 'search', 'searches')} for {describe(kind, item)} in "
+          f"{SORTS[sort]}, looking through up to {depth:,} results each.")
+    ranked, unranked = word_rankings(session, kind, item, extra_words, depth, sort)
     if not ranked:
         print(f"\n  It isn't in the top {depth:,} for any of them.")
         return

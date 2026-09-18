@@ -62,6 +62,12 @@
     background: transparent; color: var(--ink-2); font: inherit; font-weight: 600; cursor: pointer;
   }
   .tab.on { background: var(--raised); color: var(--ink); border-color: transparent; }
+  a.tab { text-decoration: none; }
+  textarea {
+    flex-basis: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font: inherit; resize: vertical;
+  }
+  textarea:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: transparent; }
   form { display: flex; gap: 10px; flex-wrap: wrap; }
   input[type="text"] {
     flex: 1; min-width: 220px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
@@ -110,6 +116,8 @@
   .why { grid-column: 1 / -1; color: var(--ink-2); font-size: 13px; background: var(--raised);
          border-radius: 10px; padding: 10px 12px; margin-top: 2px; }
   .detail { padding: 16px; }
+  .detail a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  .detail a:hover { text-decoration: underline; }
   .detail h2 { margin: 0; font-size: 17px; }
   .detail h2 a { color: var(--ink); text-decoration: none; }
   .detail h2 a:hover { text-decoration: underline; }
@@ -141,6 +149,10 @@
   <nav class="tabs">
     <button class="tab on" data-panel="titles">Check</button>
     <button class="tab" data-panel="words">Search words</button>
+    <button class="tab" data-panel="titletest">Try titles</button>
+    <button class="tab" data-panel="studios">Find studios</button>
+    <button class="tab" data-panel="searches">Where it ranks</button>
+    <a class="tab" href="/history" target="_blank" rel="noreferrer">History</a>
   </nav>
 
   <section id="panel-titles">
@@ -161,6 +173,31 @@
     <p class="hint">Shows where it ranks in Popular and Trending, and what would help.</p>
   </section>
 
+  <section id="panel-titletest" hidden>
+    <form id="ask-titletest">
+      <input type="text" id="titletest-what" placeholder="A project or studio link" spellcheck="false">
+      <button class="go">Try them</button>
+      <textarea id="titletest-titles" rows="3" placeholder="Titles you're thinking about, one per line"></textarea>
+    </form>
+    <p class="hint">Says how crowded each title's search is, and whether you'd make the first screen.</p>
+  </section>
+
+  <section id="panel-studios" hidden>
+    <form id="ask-studios">
+      <input type="text" id="studios-words" placeholder="What the studios should be about, like platformer games" spellcheck="false">
+      <button class="go">Find</button>
+    </form>
+    <p class="hint">Active studios with those words in the title that anyone can add projects to.</p>
+  </section>
+
+  <section id="panel-searches" hidden>
+    <form id="ask-searches">
+      <input type="text" id="searches-what" placeholder="A project or studio link" spellcheck="false">
+      <button class="go">Show searches</button>
+    </form>
+    <p class="hint">Tries the words in its title and lists the searches it already comes up for.</p>
+  </section>
+
   <div class="bar"><div id="fill"></div></div>
   <div class="status" id="status"></div>
   <div class="counts" id="counts"></div>
@@ -174,11 +211,12 @@ const fill = element("fill"), statusLine = element("status"), counts = element("
 const rows = element("rows"), detail = element("detail"), problem = element("problem");
 let polling = null, shown = 0;
 
-for (const tab of document.querySelectorAll(".tab")) {
+for (const tab of document.querySelectorAll("button.tab")) {
   tab.addEventListener("click", () => {
     for (const other of document.querySelectorAll(".tab")) other.classList.toggle("on", other === tab);
-    element("panel-titles").hidden = tab.dataset.panel !== "titles";
-    element("panel-words").hidden = tab.dataset.panel !== "words";
+    for (const panel of document.querySelectorAll("section[id^='panel-']")) {
+      panel.hidden = panel.id !== `panel-${tab.dataset.panel}`;
+    }
   });
 }
 
@@ -193,6 +231,23 @@ element("ask-words").addEventListener("submit", event => {
   const what = element("words-what").value.trim();
   const words = element("words-words").value.trim();
   if (what && words) begin(`/words?what=${encodeURIComponent(what)}&words=${encodeURIComponent(words)}`);
+});
+
+element("ask-titletest").addEventListener("submit", event => {
+  event.preventDefault();
+  const what = element("titletest-what").value.trim();
+  const titles = element("titletest-titles").value;
+  begin(`/titles?what=${encodeURIComponent(what)}&titles=${encodeURIComponent(titles)}`);
+});
+
+element("ask-studios").addEventListener("submit", event => {
+  event.preventDefault();
+  begin("/studios?words=" + encodeURIComponent(element("studios-words").value.trim()));
+});
+
+element("ask-searches").addEventListener("submit", event => {
+  event.preventDefault();
+  begin("/searches?what=" + encodeURIComponent(element("searches-what").value.trim()));
 });
 
 fetch("/settings").then(response => response.json()).then(saved => {
@@ -239,7 +294,8 @@ async function poll() {
     if (shown) rows.hidden = false;
     summarise(job.items);
   } else if (job.detail) {
-    showWords(job.detail);
+    const show = {words: showWords, "titles-test": showTitles, studios: showStudios, searches: showSearches};
+    show[job.kind](job.detail);
     detail.hidden = false;
   }
   if (job.state !== "running") {
@@ -305,6 +361,76 @@ function showWords(found) {
     tips.append(title, list);
     detail.append(tips);
   }
+}
+
+function showTitles(found) {
+  detail.replaceChildren(heading(found), about(`${found.kind} · ${found.about}`));
+  for (const option of found.titles) {
+    const block = make("div", "sort");
+    const line = make("div", "line");
+    const name = make("span", "name");
+    name.textContent = `"${option.title}"`;
+    name.style.minWidth = "0";
+    line.append(name);
+    if (option.current) line.append(chipFor("unsearchable", "current title"));
+    const verdict = make("div", "screen");
+    verdict.textContent = option.verdict;
+    block.append(line, verdict);
+    detail.append(block);
+  }
+  detail.append(note("After renaming, check again in a few days. Search takes a while to catch up."));
+}
+
+function showStudios(found) {
+  const title = make("h2");
+  title.textContent = `Studios about "${found.query}" that anyone can add to`;
+  detail.replaceChildren(title);
+  if (found.note) {
+    detail.append(note(found.note));
+    return;
+  }
+  for (const studio of found.studios) {
+    const block = make("div", "sort");
+    const line = make("div", "line");
+    line.append(link(studio.url, studio.title));
+    block.append(line, sub([studio.followers, `active ${studio.active}`]));
+    detail.append(block);
+  }
+  detail.append(note("Only add projects that fit a studio's topic."));
+}
+
+function showSearches(found) {
+  detail.replaceChildren(heading(found), about(`${found.kind} · ${found.sort}, top ${found.depth} results`));
+  for (const search of found.ranked) {
+    const block = make("div", "sort");
+    const line = make("div", "line");
+    const name = make("span", "name");
+    name.textContent = search.query;
+    name.style.minWidth = "0";
+    line.append(chipFor(search.first ? "easy" : "buried", `#${search.rank.toLocaleString()}`), name);
+    block.append(line);
+    detail.append(block);
+  }
+  if (!found.ranked.length) detail.append(note("It doesn't come up for any of the words in its title."));
+  if (found.unranked.length) detail.append(note(`Not in the top ${found.depth}: ${found.unranked.join(", ")}`));
+}
+
+function heading(found) {
+  const node = make("h2");
+  node.append(link(found.url, found.title));
+  return node;
+}
+
+function about(text) {
+  const node = make("div", "about");
+  node.textContent = text;
+  return node;
+}
+
+function note(text) {
+  const node = make("div", "tips");
+  node.textContent = text;
+  return node;
 }
 
 function summarise(items) {

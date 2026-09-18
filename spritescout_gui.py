@@ -147,6 +147,78 @@ def check_words(session, text, words):
         job["detail"]["tips"] = tips
 
 
+def try_titles(session, text, titles):
+    """Compare titles someone is thinking about for one project or studio."""
+    wanted = [line.strip() for line in titles.splitlines() if line.strip()]
+    if not wanted:
+        raise scout.CheckError("Type the titles you're thinking about, one per line.")
+    kind, item = one_item(text, "Testing titles works with one project or studio. Paste its link above.")
+    options = scout.possible_titles(item, wanted)
+    with job_lock:
+        job.update(total=len(options), heading=f"titles for \"{scout.tidy(item['title'])}\"",
+                   detail={"title": scout.tidy(item["title"]), "url": scout.item_url(kind, item),
+                           "kind": scout.NOUNS[kind], "about": scout.describe_item(kind, item), "titles": []})
+    for title in options:
+        verdict = scout.title_verdict(kind, item, title)
+        with job_lock:
+            job["checked"] += 1
+            job["detail"]["titles"].append({"title": title, "current": title == scout.tidy(item["title"]),
+                                            "verdict": verdict})
+
+
+def find_studios(session, words):
+    """Studios about some words that anyone can add projects to."""
+    query = " ".join(words.split())
+    if not query:
+        raise scout.CheckError("Type what the studios should be about, like \"platformer games\".")
+    with job_lock:
+        job.update(total=1, heading=f"studios about \"{query}\"")
+    studios, note = scout.open_studios(query.split())
+    with job_lock:
+        job["checked"] = 1
+        job["detail"] = {"query": query, "note": note, "studios": [
+            {"title": scout.tidy(studio["title"]), "url": scout.item_url("studios", studio),
+             "followers": scout.plural(scout.followers_of(studio), "follower"),
+             "active": scout.ago(scout.days_since_activity(studio["id"]))}
+            for studio in studios]}
+
+
+def find_searches(session, text):
+    """Which searches a project or studio already comes up for."""
+    kind, item = one_item(text, "This works with one project or studio. Paste its link above.")
+    sort = scout.title_sort()
+    with job_lock:
+        job.update(total=1, heading=f"searches for \"{scout.tidy(item['title'])}\"")
+    ranked, unranked = scout.word_rankings(session, kind, item, (), scout.WORDS_DEPTH, sort)
+    with job_lock:
+        job["checked"] = 1
+        job["detail"] = {
+            "title": scout.tidy(item["title"]), "url": scout.item_url(kind, item),
+            "kind": scout.NOUNS[kind], "sort": scout.SORTS[sort], "depth": f"{scout.WORDS_DEPTH:,}",
+            "ranked": [{"query": lookup.query, "rank": lookup.rank, "first": scout.on_first(lookup)}
+                       for lookup in ranked[: max(scout.settings.top, 1)]],
+            "unranked": [lookup.query for lookup in unranked],
+        }
+
+
+def one_item(text, complaint):
+    """The single project or studio a box refers to."""
+    parsed = scout.parse_command(scout.split_command(text)) if text else None
+    if not parsed or parsed[0] == "user":
+        raise scout.CheckError(complaint)
+    items, _ = collect(parsed[0], parsed[1])
+    return items[0]
+
+
+def history_page():
+    """The saved results as a page of charts, or None when nothing has been saved yet."""
+    log = scout.output_folder(scout.make_parser().parse_args([])) / "search_log.csv"
+    rows = [row for row in scout.read_log(log)[0] if row["id"].isdigit()]
+    if not rows:
+        return None
+    return scout.HISTORY_PAGE.replace("__DATA__", scout.history_json(rows, log.name))
+
+
 def collect(kind, value):
     """The projects and studios a command asks about, and a heading for them."""
     if kind == "studio":
@@ -202,6 +274,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/words":
             start("words", check_words, asked.get("what", [""])[0].strip(), asked.get("words", [""])[0])
             self.send_json({"started": True})
+        elif path == "/titles":
+            start("titles-test", try_titles, asked.get("what", [""])[0].strip(), asked.get("titles", [""])[0])
+            self.send_json({"started": True})
+        elif path == "/studios":
+            start("studios", find_studios, asked.get("words", [""])[0])
+            self.send_json({"started": True})
+        elif path == "/searches":
+            start("searches", find_searches, asked.get("what", [""])[0].strip())
+            self.send_json({"started": True})
+        elif path == "/history":
+            page = history_page()
+            if page:
+                self.send_file(page.encode("utf-8"), "text/html; charset=utf-8")
+            else:
+                self.send_file(b"<p style='font:16px system-ui;padding:24px'>No saved results yet. "
+                               b"Check something first.</p>", "text/html; charset=utf-8")
         elif path == "/progress":
             with job_lock:
                 self.send_json(dict(job))

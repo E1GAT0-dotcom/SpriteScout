@@ -320,13 +320,24 @@ def offline_tests():
         check("the window version remembers your username", gui.remembered().get("username") == "demo",
               gui.remembered())
 
-    gui.start("words", gui.check_words, "griffpatch", "platformer")
-    for _ in range(50):
-        if gui.job["state"] == "done":
-            break
-        time.sleep(0.1)
+    def window_error(work, *arguments):
+        gui.start("test", work, *arguments)
+        for _ in range(50):
+            if gui.job["state"] == "done":
+                return gui.job["error"]
+            time.sleep(0.1)
+        return "(never finished)"
+
     check("the window version explains search words without a project",
-          "one project or studio" in gui.job["error"], gui.job["error"])
+          "one project or studio" in window_error(gui.check_words, "griffpatch", "platformer"))
+    check("the window version explains titles without a project",
+          "one project or studio" in window_error(gui.try_titles, "griffpatch", "A title"))
+    check("the window version asks for titles to try",
+          "one per line" in window_error(gui.try_titles, "123", ""))
+    check("the window version asks what the studios should be about",
+          "what the studios should be about" in window_error(gui.find_studios, "").lower())
+    check("the window version explains searches without a project",
+          "one project or studio" in window_error(gui.find_searches, "griffpatch"))
 
     with socketserver.ThreadingTCPServer(("127.0.0.1", 0), gui.Handler) as server:
         threading.Thread(target=server.serve_forever, daemon=True).start()
