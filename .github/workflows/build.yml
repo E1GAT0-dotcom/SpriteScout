@@ -101,9 +101,12 @@ jobs:
         run: |
           if [[ "$ASSET" != *.zip ]]; then
             mv "$BUILT" "$ASSET"
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          elif [[ "$RUNNER_OS" == "macOS" && -d "$BUILT" ]]; then
             # ditto keeps the permission to run, and keeps a .app folder whole.
             ditto -c -k --keepParent "$BUILT" "$ASSET"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            # A single program goes at the top of the zip, not inside a dist folder.
+            ditto -c -k "$BUILT" "$ASSET"
           else
             (cd "$(dirname "$BUILT")" && zip -q "$GITHUB_WORKSPACE/$ASSET" "$(basename "$BUILT")")
           fi
