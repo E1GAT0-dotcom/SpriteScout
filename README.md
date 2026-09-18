@@ -66,7 +66,8 @@ Each tab is one of the checks, and results appear as they arrive:
 - **Where it ranks** — the searches something already comes up for
 - **History** — the chart page of every check you've run
 - **Settings** — sort, how deep to look, what counts as the first screen, how
-  many projects to check at most, and whether to mention new versions
+  many projects to check at most, whether to include studios, and whether to
+  mention new versions
 
 **Keep looking** appears on anything the check stopped short of, and carries on
 to the end of search. **Stop** ends a long check without losing the rows that

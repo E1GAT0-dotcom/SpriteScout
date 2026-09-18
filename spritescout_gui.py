@@ -33,7 +33,8 @@ stopping = threading.Event()
 
 SETTING_FLAGS = {"sort": "--sort", "depth": "--depth", "first_screen": "--first-screen",
                  "top": "--top", "max_projects": "--max-projects"}
-SETTING_SWITCHES = {"no_update_check": "--no-update-check"}  # settings that are on or off
+SETTING_SWITCHES = {"no_update_check": "--no-update-check",  # settings that are on or off
+                    "no_studios": "--no-studios"}
 
 
 # Remembering the person using it
@@ -353,10 +354,16 @@ def collect(kind, value, contents=False):
         raise scout.CheckError(f"There's no Scratch user named \"{value}\"." if kind == "user" else
                                f"There's no shared project or user called {value}.")
     projects = sorted(scout.get_shared_projects(user["username"]), key=scout.shared_date, reverse=True)
-    studios = scout.get_hosted_studios(user)
+    projects = projects[: scout.settings.max_projects or None]
+    studios = [] if scout.settings.no_studios else scout.get_hosted_studios(user)
     items = [("projects", project) for project in projects] + [("studios", studio) for studio in studios]
-    return items, (f"{scout.plural(len(projects), 'shared project')} and "
-                   f"{scout.plural(len(studios), 'hosted studio')} by {user['username']}")
+    if not items:
+        raise scout.CheckError(f"{user['username']} has no shared projects or hosted studios, so "
+                               "there's nothing to find in search.")
+    heading = scout.plural(len(projects), "shared project")
+    if not scout.settings.no_studios:
+        heading += f" and {scout.plural(len(studios), 'hosted studio')}"
+    return items, f"{heading} by {user['username']}"
 
 
 def row(kind, item, lookup, status, change, place=None):

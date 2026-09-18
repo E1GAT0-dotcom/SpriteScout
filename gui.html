@@ -265,6 +265,10 @@
         <input type="number" id="set-max_projects" min="1" placeholder="all">
       </label>
       <label class="tickbox">
+        <input type="checkbox" id="set-studios" checked>
+        Check studios too
+      </label>
+      <label class="tickbox">
         <input type="checkbox" id="set-updates" checked>
         Tell me about new versions
       </label>
@@ -335,6 +339,7 @@ element("ask-settings").addEventListener("submit", async event => {
   event.preventDefault();
   const asked = settingNames.map(name => `${name}=${encodeURIComponent(value(name))}`);
   asked.push("no_update_check=" + (element("set-updates").checked ? "" : "1"));
+  asked.push("no_studios=" + (element("set-studios").checked ? "" : "1"));
   const note = element("saved-note");
   let saved;
   try {
@@ -367,6 +372,7 @@ fetch("/update").then(response => response.json()).catch(() => ({})).then(update
 fetch("/settings").then(response => response.json()).catch(() => ({})).then(saved => {
   for (const name of settingNames) if (saved[name]) element("set-" + name).value = saved[name];
   element("set-updates").checked = !saved.no_update_check;
+  element("set-studios").checked = !saved.no_studios;
   if (!saved.username) return;
   const quick = element("quick");
   quick.replaceChildren(document.createTextNode("Check my projects: "), strong(saved.username));

@@ -403,6 +403,23 @@ def offline_tests():
         just_studio, studio_heading = gui.collect("studio", "4")
         inside, inside_heading = gui.collect("studio", "4", contents=True)
         scout.get_studio.cache_clear()
+    def one_user(path, asked=None):
+        if path == "/users/someone":
+            return {"id": 1, "username": "someone"}
+        return None
+
+    with Patch(scout, get_json=one_user, get_shared_projects=lambda name: [
+            {"id": n, "title": f"Game {n}", "history": {"shared": "2026-01-0%d" % n}} for n in (1, 2, 3)],
+            get_hosted_studios=lambda user: [{"id": 9, "title": "A studio"}]):
+        settings("--max-projects", "2")
+        capped, capped_heading = gui.collect("user", "someone")
+        settings("--no-studios")
+        no_studios, _ = gui.collect("user", "someone")
+        settings()
+    check("the GUI version checks at most the projects the settings allow",
+          len(capped) == 3 and "2 shared projects" in capped_heading
+          and all(kind == "projects" for kind, _ in no_studios), (capped_heading, no_studios))
+
     check("the GUI version can check the projects inside a studio, like --contents does",
           just_studio[0][0] == "studios" and len(inside) == 2 and inside[0][0] == "projects"
           and "2 projects in" in inside_heading and studio_heading.startswith("the studio"),
