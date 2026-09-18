@@ -11,12 +11,17 @@ saves results to the same place.
 import http.server
 import json
 import os
+import shutil
 import socketserver
+import subprocess
 import sys
+import tempfile
 import threading
+import time
 import traceback
 import urllib.parse
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 import spritescout as scout
@@ -30,11 +35,15 @@ job = {"state": "idle", "kind": "", "heading": "", "checked": 0, "total": 0,
 job_lock = threading.Lock()
 unfinished = {}  # row number -> (kind, item, lookup) for results a scan could look deeper for
 stopping = threading.Event()
+page_served = threading.Event()  # the window got as far as showing something
+alive = {"beat": 0.0, "seen": False}  # when the page last said it was still there
+showing = {"in_window": False}  # whether it got a window of its own, or a browser tab
 
-SETTING_FLAGS = {"sort": "--sort", "depth": "--depth", "first_screen": "--first-screen",
-                 "top": "--top", "max_projects": "--max-projects"}
+SETTING_FLAGS = {"sort": "--sort", "depth": "--depth", "trending_depth": "--trending-depth",
+                 "first_screen": "--first-screen", "top": "--top", "max_projects": "--max-projects",
+                 "recent_days": "--recent-days", "active_days": "--active-days", "delay": "--delay"}
 SETTING_SWITCHES = {"no_update_check": "--no-update-check",  # settings that are on or off
-                    "no_studios": "--no-studios"}
+                    "no_studios": "--no-studios", "no_tips": "--no-tips", "no_log": "--no-log"}
 
 
 # Remembering the person using it
@@ -417,6 +426,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/":
             page = PAGE.read_text(encoding="utf-8").replace("__VERSION__", scout.VERSION)
             self.send_file(page.encode("utf-8"), "text/html; charset=utf-8")
+            page_served.set()
+            alive.update(seen=True, beat=time.monotonic())
+        elif path == "/alive":
+            alive.update(seen=True, beat=time.monotonic())
+            self.send_json({})
+        elif path == "/bye":
+            # The page is going. Wait a moment in case another one is still open.
+            alive["beat"] = time.monotonic() - GONE_AFTER + 2
+            self.send_json({})
+        elif path == "/window":
+            self.send_json({"windowed": showing["in_window"], "browsers": BROWSER_NAMES})
         elif path == "/icon.png" and ICON.exists():
             self.send_file(ICON.read_bytes(), "image/png")
         elif path == "/check":
@@ -471,6 +491,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        self.do_GET()  # the page says goodbye with a beacon, which is a POST
+
     def send_started(self, started):
         self.send_json({"started": started})
 
@@ -481,25 +504,254 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # the page is the interface; the console stays quiet
 
 
+# Showing it as a window of its own
+
+# Edge, Chrome and their relatives can show a page as a plain window: no address
+# bar, no tabs, its own button on the taskbar. It uses the browser already set
+# up on the computer, so nothing asks to be signed into or set as the default.
+WINDOW_SIZE = "1120,860"
+GONE_AFTER = 15  # seconds of silence from the page before it counts as closed
+WINDOWS_BROWSERS = {  # what to look up in the registry, and what to call it
+    "msedge.exe": "Edge", "chrome.exe": "Chrome", "brave.exe": "Brave",
+    "vivaldi.exe": "Vivaldi", "opera.exe": "Opera", "chromium.exe": "Chromium",
+}
+MAC_BROWSERS = {
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome": "Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge": "Edge",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser": "Brave",
+    "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi": "Vivaldi",
+    "/Applications/Opera.app/Contents/MacOS/Opera": "Opera",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium": "Chromium",
+}
+LINUX_BROWSERS = {
+    "/usr/bin/google-chrome": "Chrome", "/usr/bin/google-chrome-stable": "Chrome",
+    "/usr/bin/microsoft-edge": "Edge", "/usr/bin/microsoft-edge-stable": "Edge",
+    "/usr/bin/brave-browser": "Brave", "/usr/bin/vivaldi": "Vivaldi", "/usr/bin/opera": "Opera",
+    "/usr/bin/chromium": "Chromium", "/usr/bin/chromium-browser": "Chromium",
+    "/snap/bin/chromium": "Chromium",
+}
+BROWSER_NAMES = ["Edge", "Chrome", "Brave", "Vivaldi", "Opera", "Chromium"]
+
+
+def registry_path(name):
+    """Where Windows says a program lives, or None."""
+    import winreg
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(
+                    root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{name}") as key:
+                found = winreg.QueryValue(key, None)
+        except OSError:
+            continue
+        if found and Path(found).exists():
+            return found
+    return None
+
+
+def usual_browser():
+    """Where the browser Windows opens links with lives, when it can do windows.
+
+    Windows records the choice in one of two places depending on how it was made,
+    so this tries both before giving up.
+    """
+    import winreg
+    for scheme in ("https", "http"):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                rf"SOFTWARE\Microsoft\Windows\CurrentVersion\Shell\Associations"
+                                rf"\UrlAssociations\{scheme}\UserChoice") as key:
+                chosen = winreg.QueryValueEx(key, "ProgId")[0].lower()
+        except OSError:
+            continue
+        for name, label in WINDOWS_BROWSERS.items():
+            if label.lower() in chosen or name.split(".")[0] in chosen:
+                found = registry_path(name)
+                if found:
+                    return found
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"https\shell\open\command") as key:
+            command = winreg.QueryValue(key, None)
+    except OSError:
+        return None
+    opener = (command.split('"')[1] if command.startswith('"') else command.split()[0]) if command else ""
+    if opener and Path(opener).name.lower() in WINDOWS_BROWSERS and Path(opener).exists():
+        return opener
+    return None
+
+
+def app_browser():
+    """A browser that can show a page as its own window, or None if there isn't one.
+
+    Their usual browser comes first: it has been through its own setup already,
+    so it opens straight onto the page with nothing in the way.
+    """
+    if sys.platform == "win32":
+        theirs = usual_browser()
+        if theirs:
+            return theirs
+        for name in WINDOWS_BROWSERS:
+            found = registry_path(name)
+            if found:
+                return found
+        return None
+    places = MAC_BROWSERS if sys.platform == "darwin" else LINUX_BROWSERS
+    return next((place for place in places if Path(place).exists()), None)
+
+
+def window_command(browser, address):
+    """How to ask a browser for a bare window showing one page."""
+    return [browser, f"--app={address}", f"--window-size={WINDOW_SIZE}",
+            "--no-first-run", "--no-default-browser-check"]
+
+
+def open_window(address):
+    """Show the page as a window of its own. Returns whether that worked."""
+    browser = app_browser()
+    if not browser:
+        return False
+    try:
+        subprocess.Popen(window_command(browser, address),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return False
+    return True
+
+
+def still_there():
+    """True while a page is open. Closing the window stops the beating."""
+    return not alive["seen"] or time.monotonic() - alive["beat"] < GONE_AFTER
+
+
+def complain(trouble, fatal=True):
+    """Say what went wrong. A built copy has no console, so it puts it on the screen."""
+    print(trouble)
+    try:
+        note = scout.output_folder(scout.make_parser().parse_args([])) / "last-problem.txt"
+        note.write_text(f"{datetime.now():%Y-%m-%d %H:%M}\n{trouble}\n", encoding="utf-8")
+    except Exception:
+        pass  # if even that fails, the message on screen is what matters
+    if not getattr(sys, "frozen", False):
+        return  # run from the source, so the console has it already
+    title = "SpriteScout couldn't start" if fatal else "SpriteScout"
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, trouble, title, 0x10 if fatal else 0x40)
+        elif sys.platform == "darwin":
+            subprocess.run(["osascript", "-e", f'display dialog {json.dumps(trouble)} '
+                                               f'with title {json.dumps(title)} buttons {{"OK"}}'],
+                           check=False)
+        else:
+            for teller in (["zenity", "--error", f"--text={trouble}"],
+                           ["kdialog", "--error", trouble],
+                           ["xmessage", "-center", trouble]):
+                try:
+                    subprocess.run(teller, check=False)
+                    break
+                except OSError:
+                    continue
+    except Exception:
+        pass
+
+
+def start_problems():
+    """Everything that would stop it working, checked before anything opens."""
+    problems = []
+    if not PAGE.exists():
+        problems.append(f"The page SpriteScout shows is missing ({PAGE}).\n\n"
+                        f"The download may be damaged. Get it again from {scout.RELEASES}")
+    folder = None
+    try:
+        folder = scout.output_folder(scout.make_parser().parse_args([]))
+        folder.mkdir(parents=True, exist_ok=True)
+        pen = folder / "write-test.tmp"
+        pen.write_text("ok", encoding="utf-8")
+        pen.unlink()
+    except scout.CheckError as error:
+        problems.append(str(error))
+    except OSError as error:
+        problems.append(f"SpriteScout can't save anything in {folder} ({error.strerror or error}).\n\n"
+                        "Move it somewhere like your Desktop or Downloads folder and try again.")
+    return problems
+
+
+def nothing_opened(address):
+    """Wait a while, and say something if no page ever appeared."""
+    for _ in range(40):
+        time.sleep(0.5)
+        if page_served.is_set():
+            return
+    complain(f"SpriteScout is running, but nothing opened it.\n\n"
+             f"Type this into a browser and it will be there:\n{address}\n\n"
+             "Something on this computer may be stopping it, like a security program.", fatal=False)
+
+
 def main():
     # A windowless build has nowhere to print, so give printing somewhere to go.
     if sys.stdout is None or sys.stderr is None:
         sys.stdout = sys.stderr = open(os.devnull, "w")
     else:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler) as server:
-        address = f"http://127.0.0.1:{server.server_address[1]}/"
+
+    problems = start_problems()
+    if problems:
+        complain("\n\n".join(problems))
+        return 1
+
+    try:
+        server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler)
+    except OSError as error:
+        complain("SpriteScout couldn't start the little server it shows its page from "
+                 f"({error.strerror or error}).\n\n"
+                 "A firewall or security program may be stopping it from talking to itself. "
+                 "Allowing SpriteScout through, or restarting the computer, usually fixes it.")
+        return 1
+
+    with server:
+        port = server.server_address[1]
+        address = f"http://127.0.0.1:{port}/"
         print(f"SpriteScout {scout.VERSION} is open at {address}")
-        print("Leave this running while you use it. Close it to quit.")
         update = scout.update_note()
         if update:
             print(f"\n{update}")
-        webbrowser.open(address)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+
+        showing["in_window"] = open_window(address)
+        if not showing["in_window"]:
+            opened = False
+            try:
+                opened = webbrowser.open(address)
+            except Exception:
+                opened = False
+            if not opened:
+                complain("SpriteScout is running, but it couldn't open a browser to show itself in.\n\n"
+                         f"Type this into a browser and it will be there:\n{address}\n\n"
+                         "For a window of its own instead of a tab, install any of: "
+                         + ", ".join(BROWSER_NAMES) + ".", fatal=False)
+        threading.Thread(target=nothing_opened, args=(address,), daemon=True).start()
+
+        print("Close the SpriteScout window to quit."
+              if showing["in_window"] else "Close the SpriteScout tab to quit.")
         try:
-            server.serve_forever()
+            while still_there():
+                time.sleep(1)
+            print("Closed.")
         except KeyboardInterrupt:
             print("\nClosed.")
+        finally:
+            server.shutdown()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as error:  # nothing gets to die quietly
+        try:
+            details = scout.bug_message(error, "gui: starting up")
+        except Exception:
+            details = f"{type(error).__name__}: {error}"
+        complain(f"SpriteScout hit a problem it didn't expect.\n\n{details}")
+        sys.exit(1)

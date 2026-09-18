@@ -481,6 +481,51 @@ def offline_tests():
           "what the studios should be about" in gui_error(gui.find_studios, "").lower())
     check("the GUI version explains searches without a project",
           "one project or studio" in gui_error(gui.find_searches, "griffpatch"))
+    # Both versions do the same things, and this is what says so when they drift.
+    page_html = (ROOT / "gui.html").read_text(encoding="utf-8")
+    elsewhere = {  # flags the GUI does through a tab or a button instead of a setting
+        "--find-studios", "--suggest", "--titles", "--find-words", "--contents", "--history",
+        "--scan", "--help", "-h", "--version",
+        "--output",  # where files go: the GUI keeps them beside itself
+    }
+    in_settings = set(gui.SETTING_FLAGS.values()) | set(gui.SETTING_SWITCHES.values())
+    console_only = [names[0] for _, names, *_ in scout.OPTIONS
+                    if names[0] not in in_settings and names[0] not in elsewhere]
+    no_box = [name for name in gui.SETTING_FLAGS if f'id="set-{name}"' not in page_html]
+    no_tickbox = [name for name in gui.SETTING_SWITCHES if f'"{name}"' not in page_html]
+    check("the GUI version can do everything the text version can",
+          not console_only and not no_box and not no_tickbox,
+          f"console only: {console_only}, no box: {no_box}, no tickbox: {no_tickbox}")
+
+    asked_for = gui.window_command("edge.exe", "http://127.0.0.1:1234/")
+    check("asks a browser for a bare window, not a tab",
+          asked_for[0] == "edge.exe" and "--app=http://127.0.0.1:1234/" in asked_for
+          and any(part.startswith("--window-size=") for part in asked_for)
+          # Their own browser, set up already, so nothing pops up asking to sign in.
+          and not any(part.startswith("--user-data-dir=") for part in asked_for), asked_for)
+
+    with Patch(gui.sys, platform="linux"), Patch(gui, LINUX_BROWSERS={"/no/such/browser": "Nothing"}):
+        missing = gui.app_browser()
+        opened = gui.open_window("http://127.0.0.1:1234/")
+    with Patch(gui.sys, platform="linux"), Patch(gui, LINUX_BROWSERS={sys.executable: "Python"}):
+        found = gui.app_browser()
+    check("falls back to a browser tab when nothing can show a window",
+          missing is None and opened is False and found == sys.executable, (missing, found, opened))
+
+    # Nothing about starting up is allowed to fail quietly.
+    said = []
+    with Patch(gui, PAGE=home / "no-such-page.html"), Patch(gui, complain=said.append):
+        missing_page = gui.start_problems()
+    check("says when the page it shows is missing from the download",
+          len(missing_page) == 1 and "damaged" in missing_page[0], missing_page)
+
+    written = home / "output" / "last-problem.txt"
+    with Patch(scout, HERE=home, OUTPUT=home / "output"):
+        gui.complain("something went wrong on purpose")
+    check("writes what went wrong down, for when nobody saw the message",
+          written.exists() and "on purpose" in written.read_text(encoding="utf-8"),
+          written.exists())
+
     check("the GUI version explains suggestions without a project",
           "one project or studio" in gui_error(gui.suggest_titles, "griffpatch", ""))
     check("the GUI version explains a scan for a result that has gone",
@@ -550,6 +595,9 @@ def offline_tests():
           and "__VERSION__" not in page and icon.status == 200, page[:200])
     check("the page says what happened instead of going quiet when the program is closed",
           "isn't running any more" in page and "Still finishing the last check" in page)
+    check("the page says so when it's a tab, and which browsers would give it a window",
+          '"/window"' in page and "tabnote" in page and "dismiss" in page
+          and "sendBeacon" in page and '"/alive"' in page)
     check("the GUI version's page has its stop, scan and settings controls",
           'id="stop"' in page and "Keep looking" in page and 'id="set-depth"' in page
           and "/save?" in page and "/scan?" in page and '"/update"' in page)

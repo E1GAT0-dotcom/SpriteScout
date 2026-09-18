@@ -26,9 +26,10 @@ do the same checks. Pick one:
 | Mac (Apple Silicon) | `SpriteScout-gui-mac.zip` | `SpriteScout-mac` |
 | Linux | `SpriteScout-gui-linux` | `SpriteScout-linux` |
 
-The **GUI version** opens a page in your browser with tabs and buttons, and
-no typing of commands. Nothing is uploaded: the page is served by the program on
-your own computer, and closing it stops there.
+The **GUI version** opens in a window of its own, with tabs and buttons and no
+typing of commands. Close the window and it quits. Nothing is uploaded: the page
+inside the window comes from the program running on your own computer, and
+closing it stops there.
 
 The **text version** runs in a terminal and takes typed commands. It's smaller,
 it's what the tests drive, and it's handy if you like the keyboard.
@@ -47,6 +48,15 @@ Any system with Python 3.8 or newer can skip the downloads:
 python spritescout_gui.py    the GUI version
 python spritescout.py        the text version
 ```
+
+The window is drawn by a browser you already have — Edge, Chrome, Brave,
+Vivaldi, Opera or Chromium — with none of the browser around it, so there's
+nothing to install. On a computer with none of those it opens in a tab instead,
+and says so at the top of the page.
+
+If anything stops it starting, it says what, in a message box rather than a
+console nobody can see: a damaged download, a folder it can't save in, a
+firewall blocking its own server, or no browser it could open.
 
 Type `help` in the text version to see every command and flag.
 
@@ -67,9 +77,11 @@ Each tab is one of the checks, and results appear as they arrive:
 - **Find studios** — studios about a topic that anyone can add projects to
 - **Where it ranks** — the searches something already comes up for
 - **History** — the chart page of every check you've run
-- **Settings** — sort, how deep to look, what counts as the first screen, how
-  many projects to check at most, whether to include studios, and whether to
-  mention new versions
+- **Settings** — every setting the text version takes: the sort, how deep to
+  look (and how deep in Trending), what counts as the first screen, how many
+  projects to check, how many results the finders list, what counts as new and
+  as active, the wait between requests, whether to include studios, whether to
+  show tips, whether to save results, and whether to mention new versions
 
 **Keep looking** appears on anything the check stopped short of, and carries on
 to the end of search. **Stop** ends a long check without losing the rows that

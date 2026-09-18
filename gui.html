@@ -122,6 +122,17 @@
     border-bottom: 1px solid var(--line);
   }
   .banner:hover { background: color-mix(in srgb, var(--brand) 26%, var(--surface)); }
+  .banner.note {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: color-mix(in srgb, var(--buried) 15%, var(--surface)); cursor: default;
+    color: var(--ink-2); font-weight: 600;
+  }
+  .banner.note:hover { background: color-mix(in srgb, var(--buried) 15%, var(--surface)); }
+  .dismiss {
+    border: 0; background: transparent; color: inherit; font: inherit; font-size: 20px;
+    line-height: 1; padding: 0 4px; cursor: pointer; opacity: 0.7;
+  }
+  .dismiss:hover { opacity: 1; }
   .bar { height: 4px; border-radius: 4px; background: var(--raised); margin: 22px 0 6px; overflow: hidden; }
   .bar div { height: 100%; width: 0; background: var(--brand); transition: width 0.25s ease; }
   .status {
@@ -185,6 +196,10 @@
   <span class="version">__VERSION__</span>
 </header>
 <a class="banner" id="update" href="#" target="_blank" rel="noreferrer" hidden></a>
+<div class="banner note" id="tabnote" hidden>
+  <span id="tabnote-text"></span>
+  <button class="dismiss" id="tabnote-hide" title="Hide this">&times;</button>
+</div>
 <main>
   <nav class="tabs">
     <button class="tab on" data-panel="titles">Check</button>
@@ -257,6 +272,9 @@
       <label>Results to look through
         <input type="number" id="set-depth" min="1" max="10000" placeholder="usual">
       </label>
+      <label>Of those, in Trending
+        <input type="number" id="set-trending_depth" min="1" max="10000" placeholder="200">
+      </label>
       <label>First screen size
         <input type="number" id="set-first_screen" min="1" max="40" placeholder="16">
       </label>
@@ -266,9 +284,26 @@
       <label>Most projects to check
         <input type="number" id="set-max_projects" min="1" placeholder="all">
       </label>
+      <label>Days a project counts as new
+        <input type="number" id="set-recent_days" min="1" placeholder="14">
+      </label>
+      <label>Days a studio counts as active
+        <input type="number" id="set-active_days" min="1" placeholder="30">
+      </label>
+      <label>Seconds between requests
+        <input type="number" id="set-delay" min="0" step="0.1" placeholder="0.3">
+      </label>
       <label class="tickbox">
         <input type="checkbox" id="set-studios" checked>
         Check studios too
+      </label>
+      <label class="tickbox">
+        <input type="checkbox" id="set-tips" checked>
+        Show ways to rank higher
+      </label>
+      <label class="tickbox">
+        <input type="checkbox" id="set-log" checked>
+        Save every check (History needs this)
       </label>
       <label class="tickbox">
         <input type="checkbox" id="set-updates" checked>
@@ -294,7 +329,11 @@ const element = id => document.getElementById(id);
 const fill = element("fill"), statusLine = element("status"), counts = element("counts");
 const rows = element("rows"), detail = element("detail"), problem = element("problem");
 const stopButton = element("stop");
-const settingNames = ["sort", "depth", "first_screen", "top", "max_projects"];
+const settingNames = ["sort", "depth", "trending_depth", "first_screen", "top", "max_projects",
+                      "recent_days", "active_days", "delay"];
+// Tickboxes say yes, while the settings behind them say no.
+const settingSwitches = {"set-updates": "no_update_check", "set-studios": "no_studios",
+                         "set-tips": "no_tips", "set-log": "no_log"};
 let polling = null, drawn = [], running = false;
 
 for (const tab of document.querySelectorAll("button.tab")) {
@@ -348,8 +387,9 @@ element("ask-searches").addEventListener("submit", event => {
 element("ask-settings").addEventListener("submit", async event => {
   event.preventDefault();
   const asked = settingNames.map(name => `${name}=${encodeURIComponent(value(name))}`);
-  asked.push("no_update_check=" + (element("set-updates").checked ? "" : "1"));
-  asked.push("no_studios=" + (element("set-studios").checked ? "" : "1"));
+  for (const [box, setting] of Object.entries(settingSwitches)) {
+    asked.push(`${setting}=` + (element(box).checked ? "" : "1"));
+  }
   const note = element("saved-note");
   let saved;
   try {
@@ -371,6 +411,40 @@ stopButton.addEventListener("click", async () => {
   }
 });
 
+// Tell the program the page is still open. When the beating stops, it quits.
+const beat = () => fetch("/alive").catch(() => {});
+beat();
+setInterval(beat, 5000);
+addEventListener("pagehide", () => {
+  try {
+    navigator.sendBeacon("/bye");
+  } catch (whatever) {
+    // nothing to do: the program notices on its own a few seconds later
+  }
+});
+
+element("tabnote-hide").addEventListener("click", () => {
+  element("tabnote").hidden = true;
+  try {
+    localStorage.setItem("tab-note", "off");
+  } catch (whatever) {
+    // it stays hidden for this visit either way
+  }
+});
+
+fetch("/window").then(response => response.json()).catch(() => ({})).then(how => {
+  if (how.windowed !== false) return;
+  try {
+    if (localStorage.getItem("tab-note") === "off") return;
+  } catch (whatever) {
+    // no memory of being dismissed, so show it
+  }
+  element("tabnote-text").textContent =
+    "This is a browser tab. For a window of its own, with no address bar, install any of "
+    + (how.browsers || []).join(", ") + " — SpriteScout will use it next time.";
+  element("tabnote").hidden = false;
+});
+
 fetch("/update").then(response => response.json()).catch(() => ({})).then(update => {
   if (!update.note) return;
   const banner = element("update");
@@ -381,8 +455,9 @@ fetch("/update").then(response => response.json()).catch(() => ({})).then(update
 
 fetch("/settings").then(response => response.json()).catch(() => ({})).then(saved => {
   for (const name of settingNames) if (saved[name]) element("set-" + name).value = saved[name];
-  element("set-updates").checked = !saved.no_update_check;
-  element("set-studios").checked = !saved.no_studios;
+  for (const [box, setting] of Object.entries(settingSwitches)) {
+    element(box).checked = !saved[setting];
+  }
   if (!saved.username) return;
   const quick = element("quick");
   quick.replaceChildren(document.createTextNode("Check my projects: "), strong(saved.username));
