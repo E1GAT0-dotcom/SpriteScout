@@ -6,7 +6,14 @@ name: Build
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Attach the builds to this release tag (leave blank to only build)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -52,8 +59,9 @@ jobs:
           path: ${{ matrix.asset }}
 
       - name: Add it to the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name != 'workflow_dispatch' || inputs.tag != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" "${{ matrix.asset }}" --clobber
