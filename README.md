@@ -26,6 +26,13 @@ do the same checks. Pick one:
 | Mac (Apple Silicon) | `SpriteScout-gui-mac.dmg` | `SpriteScout-mac.zip` |
 | Linux | `SpriteScout-gui-linux.zip` | `SpriteScout-linux.zip` |
 
+> [!TIP]
+> **Early testing:** for the fewest bugs, use the Windows text version,
+> `SpriteScout-windows.exe` — it's the most tested. The GUI version and the Mac
+> and Linux downloads work too, but they're newer, so they're more likely to
+> have bugs. If you try them, bug reports are really appreciated:
+> [tell me what went wrong](https://github.com/E1GAT0-dotcom/SpriteScout/issues/new/choose).
+
 The **GUI version** opens in a window of its own, with tabs and buttons and no
 typing of commands. Close the window and it quits. Nothing is uploaded: the page
 inside the window comes from the program running on your own computer, and
