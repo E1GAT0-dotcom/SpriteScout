@@ -234,6 +234,35 @@ The tips it gives come from measuring real search results, not guessing:
   what gets you on the first screen, which is what `--suggest` looks for.
 - Search stops at 10,000 results. Past that, nobody can reach you by scrolling.
 
+## Privacy
+
+SpriteScout has no account to sign into and collects nothing about you. It only
+ever talks to two places over the internet:
+
+- **Scratch** (`api.scratch.mit.edu`): the usernames, projects, studios and search
+  words you ask it to check, so it can look them up in Scratch's public data. It
+  doesn't sign in, so it never sees anything that isn't already public. The
+  History page also shows project pictures, which your browser fetches from
+  Scratch's own image server (`uploads.scratch.mit.edu`).
+- **GitHub** (`api.github.com`), at most once a day: a request for the latest
+  version number, so it can tell you when there's an update. Nothing about you
+  goes with it. Turn it off with `--no-update-check`, or untick "Tell me about
+  new versions" in the GUI version's Settings.
+
+Your results stay on your computer, in the folder described under
+[Using it](#using-it).
+
+## Code signing policy
+
+- Every download is built by GitHub Actions from the source code in this
+  repository, never on anyone's own computer, and the log of each build is
+  public on the [Actions tab](https://github.com/E1GAT0-dotcom/SpriteScout/actions).
+- **Team:** [E1GAT0-dotcom](https://github.com/E1GAT0-dotcom) is the author, the
+  reviewer and the approver. Changes from anyone else arrive as pull requests,
+  and are reviewed before they're merged.
+- The Windows programs aren't signed yet. Once they are, every signing request
+  will be approved by hand before anything is signed.
+
 ## Helping out
 
 Telling me what it got wrong about your own projects is the most useful thing
@@ -261,7 +290,9 @@ pyinstaller --onefile --windowed --name SpriteScout --add-data "gui.html;." --ad
 
 On Mac and Linux the `--add-data` separator is `:` instead of `;`. GitHub builds
 all six downloads on every release; see
-[.github/workflows/build.yml](.github/workflows/build.yml).
+[.github/workflows/build.yml](.github/workflows/build.yml). For the Windows
+builds it first runs `tools/windows_version.py`, which gives each program the
+name and version Windows shows in its Properties.
 
 Nothing to install: `spritescout.py` is the whole tool, and
 `spritescout_gui.py` serves `gui.html` on top of it. Standard library only.

@@ -751,6 +751,18 @@ def offline_tests():
     check("finds the Mac's own certificates when a built copy can't find its own",
           found_mac == str(mac_bundle) and kept_own is None and windows is None, (found_mac, kept_own, windows))
 
+    # The name and version Windows shows, which code signing checks match the release
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("windows_version", ROOT / "tools" / "windows_version.py")
+    windows_version = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(windows_version)
+    details = windows_version.version_file("SpriteScout-gui-windows.exe", "SpriteScout GUI")
+    check("the Windows programs carry the release's name and version",
+          f"'ProductVersion', '{scout.VERSION}'" in details and "'ProductName', 'SpriteScout'" in details
+          and "'OriginalFilename', 'SpriteScout-gui-windows.exe'" in details
+          and windows_version.version_numbers("2.6") == (2, 6, 0, 0)
+          and windows_version.version_numbers("2.10.1") == (2, 10, 1, 0), details)
+
     # Bugs get a plain explanation and a saved report
     settings()
     try:

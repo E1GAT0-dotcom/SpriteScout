@@ -52,7 +52,8 @@ jobs:
             program: spritescout.py
             built: dist/SpriteScout.exe
             asset: SpriteScout-windows.exe
-            extra: --icon icon.ico
+            description: SpriteScout
+            extra: --icon icon.ico --version-file version.txt
           - os: macos-latest
             program: spritescout.py
             built: dist/SpriteScout
@@ -67,7 +68,8 @@ jobs:
             program: spritescout_gui.py
             built: dist/SpriteScout.exe
             asset: SpriteScout-gui-windows.exe
-            extra: --windowed --icon icon.ico --add-data "gui.html;." --add-data "icon.png;."
+            description: SpriteScout GUI
+            extra: --windowed --icon icon.ico --version-file version.txt --add-data "gui.html;." --add-data "icon.png;."
           - os: macos-latest
             program: spritescout_gui.py
             built: dist/SpriteScout.app
@@ -88,6 +90,12 @@ jobs:
 
       - name: Run the tests that don't need Scratch
         run: python tests/run_tests.py --offline
+
+      - name: Write the name and version Windows shows
+        # Code signing checks every build carries the same product name, and a
+        # version that matches the release, so it's made from spritescout.py.
+        if: runner.os == 'Windows'
+        run: python tools/windows_version.py "${{ matrix.asset }}" "${{ matrix.description }}" version.txt
 
       - name: Build
         run: |
