@@ -220,6 +220,8 @@ jobs:
       - name: Add the checksums to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks the code out, so say which repository it means.
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           cd downloads
