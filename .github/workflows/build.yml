@@ -138,8 +138,11 @@ jobs:
           if [[ "$ASSET" == *.dmg ]]; then
             mkdir disk && cp -R "$BUILT" disk/
             brew install create-dmg > /dev/null
-            # The window people expect: the app on the left, Applications on the right.
-            if ! create-dmg --volname SpriteScout --volicon icon.icns --window-size 560 360 \
+            # One picture holding both sizes, so the arrow stays sharp on a Retina screen.
+            tiffutil -cathidpicheck dmg-background.png dmg-background@2x.png -out background.tiff
+            # The window people expect: the app on the left, an arrow, Applications on the right.
+            if ! create-dmg --volname SpriteScout --volicon icon.icns --background background.tiff \
+                   --window-size 560 360 \
                    --icon-size 128 --icon SpriteScout.app 150 170 --hide-extension SpriteScout.app \
                    --app-drop-link 410 170 "$ASSET" disk/; then
               echo "Couldn't arrange the window, so making a plain one with the same two things in it."
