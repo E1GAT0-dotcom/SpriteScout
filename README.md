@@ -24,7 +24,11 @@ do the same checks. Pick one:
 |---|---|---|
 | Windows | `SpriteScout-gui-windows.exe` | `SpriteScout-windows.exe` |
 | Mac (Apple Silicon) | `SpriteScout-gui-mac.dmg` | `SpriteScout-mac.zip` |
+| Mac (Intel) | `SpriteScout-gui-mac-intel.dmg` | `SpriteScout-mac-intel.zip` |
 | Linux | `SpriteScout-gui-linux.zip` | `SpriteScout-linux.zip` |
+
+Not sure which Mac you have?  → About This Mac. "Apple M1" and up means Apple
+Silicon; "Intel" means the Intel downloads.
 
 > [!TIP]
 > **Early testing:** for the fewest bugs, use the Windows text version,
@@ -43,12 +47,17 @@ it's what the tests drive, and it's handy if you like the keyboard.
 
 ### Opening it the first time
 
-- **Mac:** open the `.dmg` and drag SpriteScout onto the Applications folder next
-  to it. The text version unzips to a file called `SpriteScout` that opens in
-  Terminal. The first time, macOS says it can't check the app: open **System
-  Settings → Privacy & Security**, scroll to the bottom and click **Open Anyway**.
-  (Before macOS 15 you could right-click it and choose Open instead.) After that
-  it opens normally.
+- **Mac, GUI version:** open the `.dmg` and drag SpriteScout onto the
+  Applications folder beside it. It has to go there: macOS runs an app you
+  downloaded from a hidden read-only copy of itself until you move it.
+- **Mac, text version:** unzip it and keep it wherever you like — Downloads is
+  fine, it doesn't need Applications. You get a file called `SpriteScout` that
+  opens in Terminal when you double-click it.
+- **Getting past "Apple could not verify SpriteScout":** that appears the first
+  time, because the app isn't signed yet. Click **Done**, then open **System
+  Settings → Privacy & Security**, scroll to the bottom, and click **Open
+  Anyway** next to SpriteScout. Confirm once and it opens normally from then on.
+  (On macOS 14 and older you can instead right-click it and choose **Open**.)
 - **Windows:** if SmartScreen says it protected your PC, click **More info**, then
   **Run anyway**. If Windows blocks it outright, download the source and
   double-click `SpriteScout.bat`, which runs the same tool with Python.
@@ -240,6 +249,24 @@ The tips it gives come from measuring real search results, not guessing:
   "idle", still needs 128. Pairing a word of your own with one people search is
   what gets you on the first screen, which is what `--suggest` looks for.
 - Search stops at 10,000 results. Past that, nobody can reach you by scrolling.
+
+## Check it yourself
+
+Every release lists the fingerprint (SHA-256) of each download, with a link that
+scans it on VirusTotal — you can look before downloading anything. To be sure
+your copy is exactly the file the build made:
+
+```
+certutil -hashfile SpriteScout-windows.exe SHA256    on Windows
+shasum -a 256 SpriteScout-mac.zip                    on a Mac or Linux
+```
+
+The number it prints should match the one on the
+[release](https://github.com/E1GAT0-dotcom/SpriteScout/releases/latest), which
+also carries a `SHA256SUMS.txt` with all of them.
+
+Nothing here is a mystery either: the downloads are built by GitHub from the
+code in this repository, and each build's log is public.
 
 ## Privacy
 

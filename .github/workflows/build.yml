@@ -59,6 +59,11 @@ jobs:
             built: dist/SpriteScout
             asset: SpriteScout-mac.zip
             extra: ""
+          - os: macos-15-intel
+            program: spritescout.py
+            built: dist/SpriteScout
+            asset: SpriteScout-mac-intel.zip
+            extra: ""
           - os: ubuntu-latest
             program: spritescout.py
             built: dist/SpriteScout
@@ -74,6 +79,11 @@ jobs:
             program: spritescout_gui.py
             built: dist/SpriteScout.app
             asset: SpriteScout-gui-mac.dmg
+            extra: --windowed --icon icon.icns --add-data "gui.html:." --add-data "icon.png:."
+          - os: macos-15-intel
+            program: spritescout_gui.py
+            built: dist/SpriteScout.app
+            asset: SpriteScout-gui-mac-intel.dmg
             extra: --windowed --icon icon.icns --add-data "gui.html:." --add-data "icon.png:."
           - os: ubuntu-latest
             program: spritescout_gui.py
@@ -189,3 +199,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: gh release upload "$TAG" "${{ matrix.asset }}" --clobber
+
+  # One line per download that proves it's the file this build made, and a link
+  # to scan it. Anyone can check their copy against these.
+  checksums:
+    needs: build
+    if: github.event_name != 'workflow_dispatch' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          merge-multiple: true
+
+      - name: Add the checksums to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          cd downloads
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
+
+          # Only write the section once, however many times this runs.
+          gh release view "$TAG" --json body --jq .body > body.md
+          if grep -q "## Check it yourself" body.md; then
+            echo "The release already lists them."
+            exit 0
+          fi
+          {
+            echo
+            echo "## Check it yourself"
+            echo
+            echo "Every download's fingerprint, so you can be sure your copy is the one this"
+            echo "build made, and scan it without downloading anything first:"
+            echo
+            echo "| Download | SHA-256 | Scan it |"
+            echo "|---|---|---|"
+            while read -r sum name; do
+              name=${name#\*}  # sha256sum marks binary files with a star
+              [ "$name" = "SHA256SUMS.txt" ] && continue
+              echo "| \`$name\` | \`$sum\` | [VirusTotal](https://www.virustotal.com/gui/file/$sum) |"
+            done < SHA256SUMS.txt
+            echo
+            echo "On Windows: \`certutil -hashfile <file> SHA256\`. On a Mac or Linux:"
+            echo "\`shasum -a 256 <file>\`. The number should match the one above."
+          } >> body.md
+          gh release edit "$TAG" --notes-file body.md
