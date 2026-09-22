@@ -136,6 +136,28 @@ def summary_line(scanned):
             f"[report]({REPORT}/{scanned['sum']}) |")
 
 
+def release_lines(everything):
+    """The short section the release itself carries: one link for every download."""
+    rows = ["| Download | Scan |", "|---|---|"]
+    for scanned in everything:
+        if scanned.get("waiting"):
+            said = "still scanning"
+        else:
+            stats = scanned["stats"]
+            count = stats.get("malicious", 0) + stats.get("suspicious", 0)
+            said = f"{count} of {sum(stats.values())} flagged it"
+        rows.append(f"| `{scanned['name']}` | [{said}]({REPORT}/{scanned['sum']}) |")
+    anybody = any(scanned.get("flagged") for scanned in everything)
+    return ["## Scans", "",
+            "Every download went through about seventy virus scanners as it was built,",
+            "so you can read the report without downloading anything:", "", *rows, "",
+            *(["A few scanners flag any program packed into a single file, whoever wrote it,",
+               "and none of these are signed yet. Those are guesses from the shape of the",
+               "file rather than anything found inside it; the reports say which."]
+              if anybody else
+              ["Every scanner came back clean."]), ""]
+
+
 def main(names):
     key = os.environ.get("VIRUSTOTAL_API_KEY", "").strip()
     if not key:
@@ -161,6 +183,10 @@ def main(names):
     if where:
         with open(where, "a", encoding="utf-8") as summary:
             summary.write("\n".join(lines) + "\n")
+    # The release picks this up, so every download links to its own report. It's
+    # written last, once the scans are really finished, because a link to a file
+    # VirusTotal hasn't seen goes nowhere.
+    Path("virustotal-scans.md").write_text("\n".join(release_lines(everything)), encoding="utf-8")
     return 0
 
 

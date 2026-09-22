@@ -859,6 +859,21 @@ def offline_tests():
           "0 of 70" in clean and "clean" in clean and "1 of 70" in flagged
           and "Microsoft (Wacatac)" in flagged
           and "virustotal.com/gui/file/def" in flagged, (clean, flagged))
+    notes = "\n".join(virustotal.release_lines([
+        {"name": "SpriteScout-windows.exe", "sum": "aaa",
+         "stats": {"malicious": 0, "undetected": 72}, "flagged": []},
+        {"name": "SpriteScout-gui-windows.exe", "sum": "bbb",
+         "stats": {"malicious": 2, "undetected": 70}, "flagged": ["Microsoft (Wacatac)"]}]))
+    check("the release links every download to its own scan",
+          notes.count("virustotal.com/gui/file/") == 2 and "## Scans" in notes
+          and "0 of 72 flagged it" in notes and "2 of 72 flagged it" in notes
+          and "shape of the" in notes, notes)
+    all_clean = "\n".join(virustotal.release_lines([
+        {"name": "SpriteScout-windows.exe", "sum": "aaa",
+         "stats": {"malicious": 0, "undetected": 72}, "flagged": []}]))
+    check("says so plainly when nothing was flagged at all",
+          "came back clean" in all_clean and "shape of the" not in all_clean, all_clean)
+
     # Without a key it must do nothing at all: a test may never upload anybody's files.
     no_key = {name: value for name, value in os.environ.items() if name != "VIRUSTOTAL_API_KEY"}
     with Patch(virustotal.os, environ=no_key):

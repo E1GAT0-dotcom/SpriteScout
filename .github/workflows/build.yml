@@ -294,3 +294,20 @@ jobs:
         env:
           VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
         run: python tools/virustotal.py downloads/*
+
+      - name: Put a link to each scan on the release
+        # Only when there was a key to scan with, so nothing links nowhere.
+        if: hashFiles('virustotal-scans.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" --json body --jq .body > body.md
+          # Only add the section once, however many times this runs.
+          if grep -q "^## Scans" body.md; then
+            echo "The release already links to them."
+            exit 0
+          fi
+          { echo; cat virustotal-scans.md; } >> body.md
+          gh release edit "$TAG" --notes-file body.md

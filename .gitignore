@@ -9,3 +9,6 @@ dist/
 
 __pycache__/
 *.pyc
+
+# What the scanner leaves behind for the release to pick up
+virustotal-scans.md
