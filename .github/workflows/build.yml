@@ -146,8 +146,11 @@ jobs:
           # sight. Apple Silicon builds get one automatically, because macOS
           # won't run them otherwise; Intel builds don't, and those are the ones
           # that came back flagged. This gives them the same treatment.
-          codesign --force --deep --sign - "$BUILT"
-          codesign --verify --verbose=1 "$BUILT"
+          if codesign --force --deep --sign - "$BUILT" && codesign --verify --verbose=1 "$BUILT"; then
+            echo "Signed, for what an ad-hoc signature is worth."
+          else
+            echo "::warning::Couldn't sign this build, so Mac scanners may flag it."
+          fi
 
       - name: Check the finished program can reach Scratch from somebody else's computer
         if: matrix.program == 'spritescout.py'
@@ -277,6 +280,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - uses: actions/download-artifact@v4
         with:
