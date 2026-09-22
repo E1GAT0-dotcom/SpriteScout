@@ -45,6 +45,17 @@ closing it stops there.
 The **text version** runs in a terminal and takes typed commands. It's smaller,
 it's what the tests drive, and it's handy if you like the keyboard.
 
+> [!NOTE]
+> **If a virus scanner complains:** one or two of the seventy-odd scanners on
+> VirusTotal flag the Windows downloads. SpriteScout is Python packed into a
+> single file, so that there's nothing to install, and a few scanners guess from
+> that shape alone — every program built this way looks the same to them. None of
+> them name anything they found inside it, and the rest, Microsoft Defender
+> included, come back clean. Every release lists each download with a link to its
+> own report, so you can see exactly who said what, and
+> [Check it yourself](#check-it-yourself) shows how to scan it or check the
+> fingerprint yourself.
+
 ### Opening it the first time
 
 - **Mac, GUI version:** open the `.dmg` and drag SpriteScout onto the
