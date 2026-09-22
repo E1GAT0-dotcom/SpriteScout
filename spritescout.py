@@ -49,7 +49,7 @@ try:
 except ImportError:
     msvcrt = None
 
-VERSION = "2.7"
+VERSION = "2.8"
 RELEASES = "https://github.com/E1GAT0-dotcom/SpriteScout/releases"
 LATEST_RELEASE = "https://api.github.com/repos/E1GAT0-dotcom/SpriteScout/releases/latest"
 FROZEN = getattr(sys, "frozen", False)  # running as SpriteScout.exe
