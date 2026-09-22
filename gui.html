@@ -116,6 +116,10 @@
   .quick b { color: var(--brand); }
   .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
   .hint.bad { color: var(--missing); }
+  .removal { margin-top: 10px; font-size: 13px; }
+  .removal ul { margin: 8px 0; padding-left: 18px; }
+  .removal li { margin-bottom: 7px; word-break: break-all; }
+  .removal code { font-size: 12px; }
   .where code { color: var(--ink-2); overflow-wrap: anywhere; }
   .scan.inline { display: inline-block; margin: 0 0 0 8px; padding: 3px 11px; }
   .banner {
@@ -316,6 +320,9 @@
     <p class="hint" id="saved-note">Left empty, each check uses its usual amount. Saved for next time.</p>
     <p class="hint where">Results are saved in <code id="where"></code>
       <button class="scan inline" id="open-folder" type="button">Open it</button></p>
+    <p class="hint">Done with SpriteScout?
+      <button class="scan inline" id="show-removal" type="button">Remove it</button></p>
+    <div class="removal" id="removal" hidden></div>
   </section>
 
   <div class="bar"><div id="fill"></div></div>
@@ -439,6 +446,85 @@ element("open-folder").addEventListener("click", async () => {
     gone();
   }
 });
+
+let removal = null;
+
+element("show-removal").addEventListener("click", async () => {
+  const box = element("removal");
+  if (!box.hidden) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.textContent = "Looking for what SpriteScout has put on this computer...";
+  try {
+    removal = await (await fetch("/removable")).json();
+  } catch (whatever) {
+    gone();
+    return;
+  }
+  showRemoval();
+});
+
+function showRemoval() {
+  const box = element("removal");
+  box.textContent = "";
+  if (!removal.things.length) {
+    box.append(made("p", "hint", "Nothing to remove: SpriteScout hasn't saved anything here."));
+    return;
+  }
+  box.append(made("p", "", "This moves " + removal.things.length
+    + (removal.things.length === 1 ? " thing" : " things") + " to the " + removal.basket
+    + ". Nothing is erased \u2014 you can put it back."));
+  const list = made("ul", "removal-list", "");
+  for (const thing of removal.things) {
+    const item = made("li", "", "");
+    item.append(made("code", "", thing.path));
+    item.append(made("span", "hint", " " + thing.what + " \u2014 " + thing.size));
+    if (!thing.canMove) {
+      item.append(made("span", "hint bad",
+        " Open right now: close SpriteScout, then delete this one yourself."));
+    }
+    list.append(item);
+  }
+  box.append(list);
+  if (removal.fromSource) {
+    box.append(made("p", "hint", "The code in " + removal.here + " stays where it is."));
+  }
+  if (!removal.things.some(thing => thing.canMove)) return;
+  const button = made("button", "scan", "Move it to the " + removal.basket);
+  button.type = "button";
+  button.addEventListener("click", async () => {
+    if (!confirm("Move SpriteScout and everything it saved to the " + removal.basket + "?")) return;
+    button.disabled = true;
+    button.textContent = "Removing...";
+    let done;
+    try {
+      done = await (await fetch("/remove?word=" + encodeURIComponent(removal.word))).json();
+    } catch (whatever) {
+      gone();
+      return;
+    }
+    box.textContent = "";
+    if (done.error) {
+      box.append(made("p", "hint bad", done.error));
+      return;
+    }
+    if (done.gone.length) {
+      box.append(made("p", "", "Moved to the " + done.basket + ":"));
+      const moved = made("ul", "removal-list", "");
+      for (const path of done.gone) moved.append(made("li", "", path));
+      box.append(moved);
+    }
+    for (const left of done.stayed) {
+      box.append(made("p", "hint bad", left.path + " \u2014 " + left.why));
+    }
+    box.append(made("p", "hint", done.stayed.length
+      ? "Close this window when you're done."
+      : "That's everything. You can close this window. Thanks for trying SpriteScout."));
+  });
+  box.append(button);
+}
 
 element("tabnote-hide").addEventListener("click", () => {
   element("tabnote").hidden = true;
@@ -793,6 +879,12 @@ function strong(text) {
 function make(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
+  return node;
+}
+
+function made(tag, className, text) {
+  const node = make(tag, className);
+  if (text) node.textContent = text;
   return node;
 }
 </script>

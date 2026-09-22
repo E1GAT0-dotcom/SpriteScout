@@ -12,6 +12,7 @@ report.txt there has every command the tests ran, with its full output.
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -213,6 +214,68 @@ def offline_tests():
     with Patch(scout, HERE=stuck, OUTPUT=stuck / "output", data_home=lambda: fallback):
         stayed = scout.output_folder(scout.make_parser().parse_args([]))
     check("results still go next to the program when that works", stayed == stuck / "output", stayed)
+
+    # Getting rid of it. The Mac GUI version buries itself in Applications and
+    # keeps results in Library, so it has to be able to round up both.
+    check("only SpriteScout's own files can be removed",
+          not scout.ours(Path.home()) and not scout.ours(scout.HERE)
+          and not scout.ours(Path(Path.home().anchor)) and not scout.ours(Path.home() / "Desktop")
+          and scout.ours(folder / "SpriteScout.app") and scout.ours(folder / "output")
+          and scout.ours(folder / "search_log.csv"))
+
+    app = folder / "Applications" / "SpriteScout.app" / "Contents" / "MacOS"
+    app.mkdir(parents=True, exist_ok=True)
+    (app / "SpriteScout").write_text("a pretend program", encoding="utf-8")
+    kept = folder / "Application Support" / "SpriteScout"
+    kept.mkdir(parents=True, exist_ok=True)
+    (kept / "search_log.csv").write_text("pretend results", encoding="utf-8")
+    with Patch(scout.sys, platform="darwin"), Patch(scout, FROZEN=True, HERE=app,
+                                                    OUTPUT=app / "output", data_home=lambda: kept):
+        listed = scout.things_made(scout.make_parser().parse_args([]))
+    found = [place for place, _, _ in listed]
+    check("removing the Mac app finds the app itself and the results it saved",
+          found == [app.parents[1], kept] and all(can_move for _, _, can_move in listed), found)
+
+    with Patch(scout.sys, platform="win32"), Patch(scout, FROZEN=True, HERE=folder,
+                                                  OUTPUT=folder / "output"):
+        in_use = scout.things_made(scout.make_parser().parse_args([]))
+    check("the running Windows program is listed as one to delete by hand",
+          any(place == Path(sys.executable).resolve() and not can_move
+              for place, _, can_move in in_use), in_use)
+
+    check("says sizes the way a person would",
+          (scout.size_text(15), scout.size_text(2048), scout.size_text(12_500_000))
+          == ("15 bytes", "2.0 KB", "11.9 MB"),
+          (scout.size_text(15), scout.size_text(2048), scout.size_text(12_500_000)))
+
+    basket = folder / "pretend_basket"
+    (basket / "SpriteScout.app").mkdir(parents=True, exist_ok=True)
+    check("doesn't write over something already in the wastebasket",
+          scout.free_name(basket, "SpriteScout.app").name == "SpriteScout 2.app",
+          scout.free_name(basket, "SpriteScout.app"))
+
+    # Really move a file, because getting this wrong is the difference between
+    # "you can put it back" and "it's gone".
+    doomed = folder / "spritescout-wastebasket-test.txt"
+    doomed.write_text("a throwaway file made by the tests", encoding="utf-8")
+    if sys.platform == "win32":
+        scout.move_to_wastebasket(doomed)  # the real Recycle Bin, where it can be restored
+        check("really moves a file to the Recycle Bin", not doomed.exists())
+    else:
+        pretend_home = folder / "pretend_home"
+        (pretend_home / ".Trash").mkdir(parents=True, exist_ok=True)
+        redirected = {**os.environ, "HOME": str(pretend_home),
+                      "XDG_DATA_HOME": str(pretend_home / "share")}
+        with Patch(scout.os, environ=redirected):
+            scout.move_to_wastebasket(doomed)
+        landed = (list((pretend_home / ".Trash").glob("*"))
+                  + list((pretend_home / "share" / "Trash" / "files").glob("*")))
+        check("really moves a file to the Trash, where it can be put back",
+              not doomed.exists() and [place.name for place in landed] == [doomed.name], landed)
+
+    gone, stayed_put = scout.remove_everything([(folder / "not_there_at_all", "nothing", True)])
+    check("says which things it couldn't move instead of stopping",
+          not gone and len(stayed_put) == 1, (gone, stayed_put))
 
     for system, ending in (("win32", "SpriteScout"), ("linux", "spritescout")):
         with Patch(scout.sys, platform=system):
@@ -514,7 +577,7 @@ def offline_tests():
     page_html = (ROOT / "gui.html").read_text(encoding="utf-8")
     elsewhere = {  # flags the GUI does through a tab or a button instead of a setting
         "--find-studios", "--suggest", "--titles", "--find-words", "--contents", "--history",
-        "--scan", "--help", "-h", "--version",
+        "--scan", "--uninstall", "--help", "-h", "--version",
         "--output",  # where files go: the GUI keeps them beside itself
     }
     in_settings = set(gui.SETTING_FLAGS.values()) | set(gui.SETTING_SWITCHES.values())
@@ -525,6 +588,15 @@ def offline_tests():
     check("the GUI version can do everything the text version can",
           not console_only and not no_box and not no_tickbox,
           f"console only: {console_only}, no box: {no_box}, no tickbox: {no_tickbox}")
+
+    removal = gui.what_would_go()
+    check("the GUI version has a button for removing SpriteScout",
+          'id="show-removal"' in page_html and "/removable" in page_html
+          and "/remove?word=" in page_html and len(removal["word"]) >= 16
+          and removal["basket"] == scout.BASKET, removal)
+    check("only this window's page can ask for SpriteScout to be removed",
+          gui.REMOVAL_WORD not in page_html and len(gui.REMOVAL_WORD) == 16
+          and all(letter in "0123456789abcdef" for letter in gui.REMOVAL_WORD))
 
     asked_for = gui.window_command("edge.exe", "http://127.0.0.1:1234/")
     check("asks a browser for a bare window, not a tab",
@@ -762,6 +834,36 @@ def offline_tests():
           and "'OriginalFilename', 'SpriteScout-gui-windows.exe'" in details
           and windows_version.version_numbers("2.6") == (2, 6, 0, 0)
           and windows_version.version_numbers("2.10.1") == (2, 10, 1, 0), details)
+
+    # The scanner that puts every download through VirusTotal on the way out
+    spec = importlib.util.spec_from_file_location("virustotal", ROOT / "tools" / "virustotal.py")
+    virustotal = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(virustotal)
+    a_file = folder / "pretend-download.exe"
+    a_file.write_bytes(b"not really a program")
+    check("works out the same fingerprint the release lists",
+          virustotal.fingerprint(a_file)
+          == hashlib.sha256(b"not really a program").hexdigest())
+    check("names the scanners that said something, and only those",
+          virustotal.flagged_by({"Microsoft": {"category": "malicious", "result": "Trojan:Win32/Wacatac.B!ml"},
+                                 "Clean One": {"category": "undetected", "result": None},
+                                 "Unsure": {"category": "suspicious", "result": None}})
+          == ["Microsoft (Trojan:Win32/Wacatac.B!ml)", "Unsure (suspicious)"],
+          virustotal.flagged_by({"Unsure": {"category": "suspicious", "result": None}}))
+    clean = virustotal.summary_line({"name": "SpriteScout-windows.exe", "sum": "abc",
+                                     "stats": {"malicious": 0, "undetected": 70}, "flagged": []})
+    flagged = virustotal.summary_line({"name": "SpriteScout-gui-windows.exe", "sum": "def",
+                                       "stats": {"malicious": 1, "undetected": 69},
+                                       "flagged": ["Microsoft (Wacatac)"]})
+    check("says in the run's summary what each download came back with",
+          "0 of 70" in clean and "clean" in clean and "1 of 70" in flagged
+          and "Microsoft (Wacatac)" in flagged
+          and "virustotal.com/gui/file/def" in flagged, (clean, flagged))
+    # Without a key it must do nothing at all: a test may never upload anybody's files.
+    no_key = {name: value for name, value in os.environ.items() if name != "VIRUSTOTAL_API_KEY"}
+    with Patch(virustotal.os, environ=no_key):
+        check("a missing key stops the scan instead of stopping the release",
+              virustotal.main([str(a_file)]) == 0)
 
     # Bugs get a plain explanation and a saved report
     settings()

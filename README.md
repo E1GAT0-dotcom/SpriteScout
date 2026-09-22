@@ -67,19 +67,7 @@ The Mac and Linux downloads come as a disk image or a zip on purpose.
 Downloading a program strips its permission to run, so a bare file opens as a
 page of gibberish instead; opening the disk image or unzipping gives it back.
 
-### Why computers warn about it
-
-Macs and Windows trust a program without asking once its maker has paid for a
-certificate that proves who they are. SpriteScout doesn't have one yet:
-
-- On a Mac that's the Apple Developer Program: $99 a year, and it needs an adult
-  to sign up. With it, the build here can sign and notarize the app so it opens
-  like any other.
-- On Windows, [SignPath Foundation](https://signpath.org/terms.html) signs
-  open-source projects like this one for free. Their certificate says "SignPath
-  Foundation" rather than SpriteScout, and Windows still builds trust in a
-  program over its first downloads.
-- Linux doesn't ask.
+### Running it
 
 Any system with Python 3.8 or newer can skip the downloads:
 
@@ -214,6 +202,7 @@ There's more, but only if you ask for it:
 | `--contents` | Checks every project in a studio (a tickbox in the GUI version) |
 | `--history` | A page with charts of your ranks over time |
 | `--scan` | Keeps looking past where a check normally stops (press q to stop) |
+| `--uninstall` | Moves SpriteScout and everything it saved to the Trash |
 
 Results go in the `output` folder next to the program: `search_log.csv` keeps
 every check, so later checks tell you what moved, and `search_history.html` is
@@ -224,6 +213,22 @@ because an app is never allowed to write inside itself. The same folder (or
 `%LOCALAPPDATA%\SpriteScout` on Windows) is where results go whenever the folder
 next to the program can't be written to. The GUI version's Settings tab says
 where they are and has a button to open the folder.
+
+## Removing it
+
+There's no installer, so there's nothing to uninstall in the usual sense — but
+the Mac GUI version has to live in the Applications folder, and both versions
+keep results in a folder of their own, so SpriteScout can round it all up for
+you:
+
+- **GUI version:** Settings → **Remove it**. It lists the app and everything it
+  saved, with sizes, and moves the lot when you say so.
+- **Text version:** type `uninstall`, or run it with `--uninstall`.
+
+Nothing is erased. Everything goes to the Trash (the Recycle Bin on Windows), so
+you can put it back if you change your mind. On Windows the program is in use
+while it's running, so it clears out the saved results and leaves you to delete
+the `.exe` once you've closed it.
 
 ## What I found out about Scratch search
 
@@ -252,21 +257,36 @@ The tips it gives come from measuring real search results, not guessing:
 
 ## Check it yourself
 
-Every release lists the fingerprint (SHA-256) of each download, with a link that
-scans it on VirusTotal — you can look before downloading anything. To be sure
-your copy is exactly the file the build made:
+Don't take my word that a download is safe — look for yourself. None of this
+needs an account.
+
+**Scan it.** Drag the file onto
+[VirusTotal](https://www.virustotal.com/gui/home/upload) and about seventy virus
+scanners read it in under a minute, free. If someone has scanned that exact file
+already, pasting its fingerprint into the search box there brings up the report
+without uploading anything.
+
+A few scanners flag any program packed into a single file, whoever wrote it, with
+a name like "Wacatac" or "MalwareX-gen" — those are guesses from the shape of the
+file, not something found inside it. The ones that do it are listed on each
+build's summary in the [Actions
+tab](https://github.com/E1GAT0-dotcom/SpriteScout/actions), along with everything
+that came back clean.
+
+**Check it's the real file.** Every release carries a `SHA256SUMS.txt` listing
+the fingerprint of each download. This prints the fingerprint of your copy:
 
 ```
 certutil -hashfile SpriteScout-windows.exe SHA256    on Windows
 shasum -a 256 SpriteScout-mac.zip                    on a Mac or Linux
 ```
 
-The number it prints should match the one on the
-[release](https://github.com/E1GAT0-dotcom/SpriteScout/releases/latest), which
-also carries a `SHA256SUMS.txt` with all of them.
+If it matches, nothing changed on the way to you.
 
-Nothing here is a mystery either: the downloads are built by GitHub from the
-code in this repository, and each build's log is public.
+**Read it.** Nothing here is a mystery: the downloads are built by GitHub from
+the code in this repository, on GitHub's own computers, and the log of every
+build is public on the
+[Actions tab](https://github.com/E1GAT0-dotcom/SpriteScout/actions).
 
 ## Privacy
 

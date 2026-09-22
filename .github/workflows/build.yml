@@ -107,10 +107,47 @@ jobs:
         if: runner.os == 'Windows'
         run: python tools/windows_version.py "${{ matrix.asset }}" "${{ matrix.description }}" version.txt
 
-      - name: Build
+      - name: Compile our own launcher, so scanners have nothing to match
+        shell: bash
+        env:
+          PYINSTALLER: 6.22.3
         run: |
-          pip install pyinstaller==6.22.3
-          pyinstaller --onefile --name SpriteScout ${{ matrix.extra }} ${{ matrix.program }}
+          # Every PyInstaller program starts with the same small launcher, and
+          # virus scanners keep signatures for it, because plenty of real malware
+          # is built this way too. That is what flags SpriteScout. Compiling the
+          # launcher here, from PyInstaller's own source, gives them nothing to
+          # recognise. Downloading the source isn't enough by itself: it carries
+          # the ready-made launchers as well, identical to the last byte, so waf
+          # has to be told to build replacements.
+          pip download --no-binary pyinstaller --no-deps "pyinstaller==$PYINSTALLER" -d launcher
+          tar -xzf "launcher/pyinstaller-$PYINSTALLER.tar.gz" -C launcher
+          cd "launcher/pyinstaller-$PYINSTALLER/bootloader"
+          if python ./waf distclean all && pip install ..; then
+            echo "Built the launcher here."
+          else
+            echo "::warning::Using the ready-made launcher: some virus scanners flag it."
+            pip install "pyinstaller==$PYINSTALLER"
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          # No UPX: squeezing a program smaller is a thing scanners expect of malware.
+          pyinstaller --onefile --noupx --name SpriteScout ${{ matrix.extra }} ${{ matrix.program }}
+
+      - name: Sign it as far as a free certificate goes
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          BUILT: ${{ matrix.built }}
+        run: |
+          # An ad-hoc signature proves nothing about who made it, but an
+          # altogether unsigned program is what several Mac scanners flag on
+          # sight. Apple Silicon builds get one automatically, because macOS
+          # won't run them otherwise; Intel builds don't, and those are the ones
+          # that came back flagged. This gives them the same treatment.
+          codesign --force --deep --sign - "$BUILT"
+          codesign --verify --verbose=1 "$BUILT"
 
       - name: Check the finished program can reach Scratch from somebody else's computer
         if: matrix.program == 'spritescout.py'
@@ -229,28 +266,24 @@ jobs:
           cat SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --clobber
 
-          # Only write the section once, however many times this runs.
-          gh release view "$TAG" --json body --jq .body > body.md
-          if grep -q "## Check it yourself" body.md; then
-            echo "The release already lists them."
-            exit 0
-          fi
-          {
-            echo
-            echo "## Check it yourself"
-            echo
-            echo "Every download's fingerprint, so you can be sure your copy is the one this"
-            echo "build made, and scan it without downloading anything first:"
-            echo
-            echo "| Download | SHA-256 | Scan it |"
-            echo "|---|---|---|"
-            while read -r sum name; do
-              name=${name#\*}  # sha256sum marks binary files with a star
-              [ "$name" = "SHA256SUMS.txt" ] && continue
-              echo "| \`$name\` | \`$sum\` | [VirusTotal](https://www.virustotal.com/gui/file/$sum) |"
-            done < SHA256SUMS.txt
-            echo
-            echo "On Windows: \`certutil -hashfile <file> SHA256\`. On a Mac or Linux:"
-            echo "\`shasum -a 256 <file>\`. The number should match the one above."
-          } >> body.md
-          gh release edit "$TAG" --notes-file body.md
+  # Every download goes through about seventy virus scanners on the way out, so
+  # that anybody can read the report without uploading a file themselves. A free
+  # account at virustotal.com gives you the key this needs, kept as a repository
+  # secret called VIRUSTOTAL_API_KEY; without it this job says so and moves on.
+  scan:
+    needs: build
+    if: github.event_name != 'workflow_dispatch' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          merge-multiple: true
+
+      - name: Scan every download
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: python tools/virustotal.py downloads/*

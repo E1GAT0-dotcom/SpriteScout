@@ -443,6 +443,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_json({"opened": True})
             except (OSError, scout.CheckError) as error:
                 self.send_json({"error": f"Couldn't open the folder ({error})."})
+        elif path == "/removable":
+            self.send_json(what_would_go())
+        elif path == "/remove":
+            if asked.get("word", [""])[0] != REMOVAL_WORD:
+                self.send_json({"error": "Only this window can remove SpriteScout. "
+                                         "Open Settings here and use the button."})
+            else:
+                self.send_json(remove_it_all())
         elif path == "/window":
             self.send_json({"windowed": showing["in_window"], "browsers": BROWSER_NAMES})
         elif path == "/icon.png" and ICON.exists():
@@ -685,6 +693,32 @@ def start_problems():
                         "is stopping it: the disk may be full, or a security program may be blocking "
                         "SpriteScout. Restarting the computer sometimes clears it.")
     return problems
+
+
+# Getting rid of it
+
+# Another website can tell a browser to fetch an address here, but it can't read
+# what comes back, so it never learns this word - and /remove does nothing
+# without it. That keeps a stray page from emptying anybody's SpriteScout.
+REMOVAL_WORD = os.urandom(8).hex()
+
+
+def what_would_go():
+    """Everything removing SpriteScout would move, for the Settings tab to list."""
+    args = scout.make_parser().parse_args(saved_flags())
+    return {"basket": scout.BASKET, "word": REMOVAL_WORD, "fromSource": not scout.FROZEN,
+            "here": str(scout.HERE),
+            "things": [{"path": str(path), "what": what, "canMove": can_move,
+                        "size": scout.size_text(scout.room_taken(path))}
+                       for path, what, can_move in scout.things_made(args)]}
+
+
+def remove_it_all():
+    """Move SpriteScout and everything it saved to the wastebasket."""
+    args = scout.make_parser().parse_args(saved_flags())
+    gone, stayed = scout.remove_everything(scout.things_made(args))
+    return {"basket": scout.BASKET, "gone": [str(path) for path in gone],
+            "stayed": [{"path": str(path), "why": why} for path, why in stayed]}
 
 
 def results_folder():

@@ -29,6 +29,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import ssl
 import statistics
 import subprocess
@@ -55,6 +56,7 @@ FROZEN = getattr(sys, "frozen", False)  # running as SpriteScout.exe
 HERE = Path(sys.executable if FROZEN else __file__).resolve().parent
 OUTPUT = HERE / "output"  # where results, the history page and error reports go, when it can
 PROGRAM = "SpriteScout.exe" if FROZEN else "python spritescout.py"
+BASKET = "Recycle Bin" if sys.platform == "win32" else "Trash"  # what this computer calls it
 
 API = "https://api.scratch.mit.edu"
 USER_AGENT = f"SpriteScout/{VERSION} (read-only)"
@@ -146,6 +148,7 @@ COMMANDS = [
 ]
 WINDOW_COMMANDS = [
     ("scan", "Keep looking for what the last check didn't find"),
+    ("uninstall", "Remove SpriteScout and everything it saved"),
     ("help", "Show this list"),
     ("q", "Quit (or type quit or exit)"),
 ]
@@ -167,6 +170,8 @@ OPTIONS = [
      "Open a page charting saved results over time"),
     ("Extra features", ["--scan"], {"action": "store_true"},
      "Keep looking right away for anything not found"),
+    ("Extra features", ["--uninstall"], {"action": "store_true"},
+     f"Move SpriteScout and everything it saved to the {BASKET}"),
     ("Settings", ["--sort"], {"choices": ["popular", "trending", "both"], "default": "both", "metavar": "SORT"},
      "popular, trending or both (default both)"),
     ("Settings", ["--depth"], {"type": whole_number(1, MAX_DEPTH), "metavar": "N"},
@@ -1456,6 +1461,182 @@ def output_folder(args):
     return OUTPUT if writable(OUTPUT) else data_home()
 
 
+# Getting rid of it
+
+# The Mac GUI version has to live in the Applications folder and keeps its
+# results in Library, so there's nothing obvious to drag to the Trash. This
+# finds everything SpriteScout put on the computer and moves it to the
+# wastebasket, where it can still be fished out if anyone changes their mind.
+
+OUR_FILES = ("search_log.csv", "search_history.html", "gui-settings.json", "window-settings.json")
+
+
+def app_bundle():
+    """The Mac .app folder this is running inside, if it's running inside one."""
+    return next((folder for folder in (HERE, *HERE.parents) if folder.suffix == ".app"), None)
+
+
+def program_place():
+    """What somebody would drag to the wastebasket to be rid of SpriteScout: the Mac app,
+    the built program, or nothing at all when it's being run from the source code."""
+    if not FROZEN:
+        return None
+    return app_bundle() or Path(sys.executable).resolve()
+
+
+def ours(path):
+    """True only for something SpriteScout made itself, so nothing else can go by mistake."""
+    if path in (Path.home(), Path(path.anchor), HERE):
+        return False
+    return "spritescout" in path.name.lower() or path.name in ("output",) + OUR_FILES
+
+
+def things_made(args):
+    """Everything SpriteScout has put on this computer, as (path, what it is, can be moved).
+
+    A running Windows program is in use, so Windows won't let anything move it.
+    That one gets listed for the person to delete once they've closed it.
+    """
+    found, seen = [], set()
+    program = program_place()
+
+    def add(path, what, certain=False):
+        if not path or path in seen or path == Path.home() or not (certain or ours(path)):
+            return
+        try:
+            if not path.exists():
+                return
+        except OSError:
+            return
+        seen.add(path)
+        found.append((path, what, not (sys.platform == "win32" and path == program)))
+
+    add(program, "the program itself", certain=True)
+    add(output_folder(args), "your saved results and settings")
+    add(data_home(), "saved results and settings")
+    for name in OUR_FILES:
+        add(HERE / name, "results saved by an older version")
+    return found
+
+
+def room_taken(path):
+    """How much room something takes up, folders and everything in them."""
+    try:
+        if path.is_file():
+            return path.stat().st_size
+        return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+    except OSError:
+        return 0
+
+
+def size_text(size):
+    """A size the way a person would say it, like "12.4 MB"."""
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:,} bytes" if unit == "bytes" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def free_name(folder, name):
+    """A name in there nothing is using, so what's in the wastebasket already stays."""
+    taken, count = folder / name, 2
+    while taken.exists():
+        taken = folder / f"{Path(name).stem} {count}{Path(name).suffix}"
+        count += 1
+    return taken
+
+
+def recycle_on_windows(path):
+    """Put something in the Recycle Bin the way Explorer does, so it can be restored."""
+    import ctypes
+    import ctypes.wintypes
+
+    class Operation(ctypes.Structure):
+        _fields_ = [("window", ctypes.wintypes.HWND), ("wanted", ctypes.wintypes.UINT),
+                    ("source", ctypes.wintypes.LPCWSTR), ("into", ctypes.wintypes.LPCWSTR),
+                    ("flags", ctypes.c_uint16), ("gave_up", ctypes.wintypes.BOOL),
+                    ("renames", ctypes.c_void_p), ("title", ctypes.wintypes.LPCWSTR)]
+
+    remove, to_the_bin, no_asking, no_progress, no_error_box = 3, 0x0040, 0x0010, 0x0004, 0x0400
+    # Windows separates paths with an empty marker and wants two at the end;
+    # create_unicode_buffer puts the second one there itself.
+    listed = ctypes.create_unicode_buffer(str(path) + chr(0))
+    asked = Operation(None, remove, ctypes.cast(listed, ctypes.wintypes.LPCWSTR), None,
+                      to_the_bin | no_asking | no_progress | no_error_box, False, None, None)
+    if ctypes.windll.shell32.SHFileOperationW(ctypes.byref(asked)) or asked.gave_up:
+        raise OSError(f"Windows wouldn't move {path.name} to the Recycle Bin.")
+
+
+def move_to_wastebasket(path):
+    """Move one file or folder to this computer's wastebasket, where it can be got back."""
+    if sys.platform == "win32":
+        recycle_on_windows(path)
+        return
+    if sys.platform == "darwin":
+        basket, records = Path.home() / ".Trash", None
+    else:
+        share = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+        basket, records = share / "Trash" / "files", share / "Trash" / "info"
+    basket.mkdir(parents=True, exist_ok=True)
+    landed = free_name(basket, path.name)
+    if records is not None:  # what a Linux file manager reads to offer "Restore"
+        records.mkdir(parents=True, exist_ok=True)
+        (records / f"{landed.name}.trashinfo").write_text(
+            "[Trash Info]\nPath=" + urllib.parse.quote(str(path))
+            + "\nDeletionDate=" + datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "\n",
+            encoding="utf-8")
+    shutil.move(str(path), str(landed))
+
+
+def remove_everything(found):
+    """Move it all to the wastebasket. Returns what went, and what stayed with the reason."""
+    gone, stayed = [], []
+    for path, _, can_move in found:
+        if not can_move:
+            stayed.append((path, "it's open right now, so Windows won't let it move. "
+                                 "Close SpriteScout and delete it yourself."))
+            continue
+        try:
+            move_to_wastebasket(path)
+            gone.append(path)
+        except (OSError, shutil.Error) as trouble:
+            stayed.append((path, str(trouble) or trouble.__class__.__name__))
+    return gone, stayed
+
+
+def uninstall(args):
+    """Say what would go, ask, then move it to the wastebasket."""
+    found = things_made(args)
+    if not found:
+        print("\nThere's nothing to remove: SpriteScout hasn't saved anything on this computer.")
+        return
+    print(f"\nThis would move {plural(len(found), 'thing')} to the {BASKET}:\n")
+    for path, what, can_move in found:
+        print(f"  {path}\n    {what} \u2014 {size_text(room_taken(path))}"
+              + ("" if can_move else "\n    (open right now: close SpriteScout, then delete this one yourself)"))
+    print(f"\nNothing is erased. It all goes to the {BASKET}, so you can put it back.")
+    if not FROZEN:
+        print(f"The code in {HERE} stays where it is.")
+    if not any(can_move for _, _, can_move in found):
+        return
+    try:
+        said = clean_input(input("\nGo ahead? Type yes: ")).lower()
+    except (EOFError, KeyboardInterrupt):
+        said = ""
+    if said not in ("yes", "y"):
+        print("Nothing was removed.")
+        return
+    gone, stayed = remove_everything(found)
+    if gone:
+        print(f"\nMoved to the {BASKET}:")
+        for path in gone:
+            print(f"  {path}")
+    for path, why in stayed:
+        print(f"\nStill there: {path}\n  {why}")
+    if gone and not stayed:
+        print("\nThat's everything. Thanks for trying SpriteScout.")
+
+
 def history_json(rows, source):
     """The log grouped by project or studio, then by search, for the history page."""
     items = {}
@@ -2055,12 +2236,14 @@ def run(session, args):
         make_history()
     if args.find_studios:
         find_studios(args.find_studios)
+    if args.uninstall:
+        uninstall(args)
     if args.what:
         run_check(session, args)
     elif args.titles or args.find_words or args.contents or args.suggest:
         raise CheckError("--suggest, --titles, --find-words and --contents go after a project or "
                          "studio, like: 123456789 --find-words")
-    return bool(args.what or args.history or args.find_studios)
+    return bool(args.what or args.history or args.find_studios or args.uninstall)
 
 
 def run_check(session, args):
@@ -2162,7 +2345,7 @@ def main():
         return
 
     if defaults.what or defaults.history or defaults.find_studios or defaults.titles \
-            or defaults.find_words or defaults.contents:
+            or defaults.find_words or defaults.contents or defaults.uninstall:
         session = Session(interactive=False)
         try:
             run(session, defaults)
@@ -2204,6 +2387,8 @@ def main():
                 print(f"SpriteScout {VERSION}")
             elif first == "scan":
                 scan(session)
+            elif first == "uninstall":
+                uninstall(defaults)
             else:
                 tokens = protect_usernames(split_command(text), parser)
                 args = parser.parse_intermixed_args(tokens, namespace=copy.copy(defaults))
